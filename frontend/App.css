@@ -1,0 +1,115 @@
+/* Dark theme for the application */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: #121824;
+  color: #ffffff;
+}
+
+/* Make sure the root container takes full height */
+#root, html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Base app container */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #121824;
+}
+
+/* Animation for page transitions */
+.page-transition {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Utility classes */
+.center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.full-height {
+  height: 100%;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+/* Button styles */
+.btn {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  border: none;
+  outline: none;
+}
+
+.btn:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
+}
+
+.btn-primary {
+  background-color: #4285F4;
+  color: white;
+}
+
+.btn-success {
+  background-color: #34A853;
+  color: white;
+}
+
+.btn-accent {
+  background-color: #9C27B0;
+  color: white;
+}
+
+/* Forms */
+input, textarea, select {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+  font-size: 16px;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #4285F4;
+  outline: none;
+}
+
+/* Dark themed cards */
+.card {
+  background-color: rgba(25, 26, 45, 0.7);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}

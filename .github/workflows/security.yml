@@ -1,0 +1,320 @@
+name: 🔒 Security & Compliance Pipeline
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: playground-eks-cluster
+
+jobs:
+  # Container Security Scanning
+  container-security:
+    name: 🐳 Container Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🐳 Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: 🔍 Scan Backend Image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '898307279366.dkr.ecr.us-east-1.amazonaws.com/gv-playground-backend:latest'
+        format: 'sarif'
+        output: 'backend-security-results.sarif'
+        
+    - name: 🔍 Scan Frontend Image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '898307279366.dkr.ecr.us-east-1.amazonaws.com/gv-playground-frontend:latest'
+        format: 'sarif'
+        output: 'frontend-security-results.sarif'
+        
+    - name: 📤 Upload Security Scan Results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: |
+          backend-security-results.sarif
+          frontend-security-results.sarif
+
+  # Infrastructure Security Scanning
+  infrastructure-security:
+    name: 🏗️ Infrastructure Security Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infrastructure
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔍 Run Checkov Security Scan
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: infrastructure/
+        framework: terraform
+        output_format: sarif
+        output_file_path: checkov-results.sarif
+        skip_check: CKV_AWS_79,CKV_AWS_23  # Skip specific checks if needed
+        
+    - name: 🔍 Run TFSec Security Scan
+      uses: aquasecurity/tfsec-action@v1.0.3
+      with:
+        working_directory: infrastructure/
+        format: sarif
+        soft_fail: true
+        
+    - name: 📤 Upload Infrastructure Security Results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: |
+          infrastructure/checkov-results.sarif
+          infrastructure/tfsec-results.sarif
+
+  # Kubernetes Security Scanning
+  kubernetes-security:
+    name: ☸️ Kubernetes Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 🔍 Run Kube-score Security Scan
+      uses: zegl/kube-score-action@v1.10.0
+      with:
+        kubernetes_manifest: k8s/
+        output_format: sarif
+        output_file: kube-score-results.sarif
+        ignore_container_cpu_limit: true
+        ignore_container_memory_limit: true
+        
+    - name: 🔍 Run Kubeaudit Security Scan
+      run: |
+        # Install kubeaudit
+        curl -s https://raw.githubusercontent.com/Shopify/kubeaudit/master/install.sh | bash
+        
+        # Run kubeaudit on all manifests
+        ./kubeaudit all -f k8s/ --format json > kubeaudit-results.json
+        
+    - name: 📤 Upload Kubernetes Security Results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: kube-score-results.sarif
+
+  # Dependency Security Scanning
+  dependency-security:
+    name: 📦 Dependency Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔍 Scan Backend Dependencies
+      run: |
+        cd backend
+        npm audit --audit-level=moderate --json > ../backend-audit-results.json || true
+        
+    - name: 🔍 Scan Frontend Dependencies
+      run: |
+        cd frontend
+        npm audit --audit-level=moderate --json > ../frontend-audit-results.json || true
+        
+    - name: 🔍 Run Snyk Security Scan
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+      continue-on-error: true
+
+  # AWS Security Compliance
+  aws-compliance:
+    name: ☁️ AWS Security Compliance
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔍 Run AWS Config Compliance Check
+      run: |
+        # Check EKS cluster security
+        aws eks describe-cluster --name $EKS_CLUSTER_NAME --query 'cluster.resourcesVpcConfig.securityGroupIds'
+        
+        # Check RDS security
+        aws rds describe-db-instances --db-instance-identifier playground-postgres --query 'DBInstances[0].VpcSecurityGroups'
+        
+        # Check S3 bucket security
+        aws s3api get-bucket-encryption --bucket gv-playground-terraform-state
+        
+        # Check IAM roles
+        aws iam list-roles --query 'Roles[?contains(RoleName, `playground`)]'
+        
+    - name: 🔍 Run AWS Security Hub Findings
+      run: |
+        # Get security findings (if Security Hub is enabled)
+        aws securityhub get-findings --filters '{"ProductFields": [{"Key": "aws/securityhub/ProductName", "Value": "Security Hub", "Comparison": "EQUALS"}]}' --max-items 10 || echo "Security Hub not enabled"
+
+  # Generate Security Report
+  security-report:
+    name: 📊 Security Report
+    runs-on: ubuntu-latest
+    needs: [container-security, infrastructure-security, kubernetes-security, dependency-security, aws-compliance]
+    if: always()
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📊 Generate Security Report
+      run: |
+        cat > security-report.md << 'EOF'
+        # 🔒 Security Report - GV Playground
+        
+        **Date**: $(date)
+        **Environment**: playground
+        **Region**: us-east-1
+        
+        ## 📊 Security Scan Results
+        
+        | Component | Status | Details |
+        |-----------|--------|---------|
+        | Container Security | ${{ needs.container-security.result }} | Trivy scan completed |
+        | Infrastructure Security | ${{ needs.infrastructure-security.result }} | Checkov & TFSec scan completed |
+        | Kubernetes Security | ${{ needs.kubernetes-security.result }} | Kube-score & Kubeaudit scan completed |
+        | Dependency Security | ${{ needs.dependency-security.result }} | NPM audit & Snyk scan completed |
+        | AWS Compliance | ${{ needs.aws-compliance.result }} | AWS security checks completed |
+        
+        ## 🔍 Security Findings
+        
+        ### Container Security
+        - Backend image scanned for vulnerabilities
+        - Frontend image scanned for vulnerabilities
+        - Results uploaded to GitHub Security tab
+        
+        ### Infrastructure Security
+        - Terraform code scanned with Checkov
+        - Infrastructure scanned with TFSec
+        - Results uploaded to GitHub Security tab
+        
+        ### Kubernetes Security
+        - Kubernetes manifests scanned with Kube-score
+        - Security policies audited with Kubeaudit
+        - Results uploaded to GitHub Security tab
+        
+        ### Dependency Security
+        - Backend dependencies audited
+        - Frontend dependencies audited
+        - Snyk security scan completed
+        
+        ### AWS Compliance
+        - EKS cluster security verified
+        - RDS security groups checked
+        - S3 bucket encryption verified
+        - IAM roles audited
+        
+        ## 🎯 Recommendations
+        
+        1. **Regular Updates**: Keep all dependencies updated
+        2. **Image Scanning**: Scan all container images before deployment
+        3. **Policy Enforcement**: Implement Pod Security Policies
+        4. **Network Security**: Review and update security groups regularly
+        5. **Access Control**: Regularly audit IAM roles and permissions
+        
+        ## 📞 Security Contacts
+        
+        - **Security Team**: security@company.com
+        - **Incident Response**: incident@company.com
+        - **Compliance Team**: compliance@company.com
+        
+        EOF
+        
+    - name: 📤 Upload Security Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-report-$(date +%Y%m%d)
+        path: security-report.md
+        
+    - name: 📧 Send Security Report
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "text": "🔒 Security Report Generated",
+            "attachments": [
+              {
+                "color": "good",
+                "fields": [
+                  {
+                    "title": "Environment",
+                    "value": "playground",
+                    "short": true
+                  },
+                  {
+                    "title": "Date",
+                    "value": "$(date)",
+                    "short": true
+                  },
+                  {
+                    "title": "Container Security",
+                    "value": "${{ needs.container-security.result }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Infrastructure Security",
+                    "value": "${{ needs.infrastructure-security.result }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Kubernetes Security",
+                    "value": "${{ needs.kubernetes-security.result }}",
+                    "short": true
+                  }
+                ]
+              }
+            ]
+          }
+        channel: '#security'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      if: always()

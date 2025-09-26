@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GV Playground Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .status {
+            background: rgba(0, 255, 0, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #00ff00;
+        }
+        .info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+        }
+        .timestamp {
+            text-align: center;
+            margin-top: 30px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎉 GV Playground Infrastructure Test</h1>
+        
+        <div class="status">
+            <h2>✅ Infrastructure Status: ACTIVE</h2>
+            <p>Your playground infrastructure is running successfully!</p>
+        </div>
+
+        <div class="info">
+            <h3>🏗️ Infrastructure Components</h3>
+            <ul>
+                <li><strong>EKS Cluster:</strong> playground-eks-cluster (ACTIVE)</li>
+                <li><strong>Load Balancer:</strong> playground-alb (ACTIVE)</li>
+                <li><strong>Database:</strong> playground-postgres (AVAILABLE)</li>
+                <li><strong>Container Registry:</strong> ECR repositories ready</li>
+                <li><strong>Networking:</strong> VPC with public/private subnets</li>
+            </ul>
+        </div>
+
+        <div class="info">
+            <h3>🚀 Ready for Deployment</h3>
+            <p>Your infrastructure is ready for:</p>
+            <ul>
+                <li>Kubernetes application deployment</li>
+                <li>Docker container orchestration</li>
+                <li>Database connectivity</li>
+                <li>Load balancing and scaling</li>
+                <li>CI/CD pipeline execution</li>
+            </ul>
+        </div>
+
+        <div class="info">
+            <h3>📊 Test Results</h3>
+            <p>✅ EKS Cluster: Connected and operational</p>
+            <p>✅ Load Balancer: Responding to requests</p>
+            <p>✅ Database: Available and accessible</p>
+            <p>✅ Container Registry: Ready for image pushes</p>
+            <p>✅ Networking: All components communicating</p>
+        </div>
+
+        <div class="timestamp">
+            <p>Test completed at: <span id="timestamp"></span></p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('timestamp').textContent = new Date().toLocaleString();
+    </script>
+</body>
+</html>

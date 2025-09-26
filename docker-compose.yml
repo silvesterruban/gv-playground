@@ -1,0 +1,132 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: gv-playground-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gvplayground}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gvplayground_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-gvplayground_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gvplayground}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gv-playground-network
+
+  # Redis Cache (Optional)
+  redis:
+    image: redis:7-alpine
+    container_name: gv-playground-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gv-playground-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gv-playground-backend
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-gvplayground}:${POSTGRES_PASSWORD:-gvplayground_dev_password}@postgres:5432/${POSTGRES_DB:-gvplayground_db}
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=development-secret-change-in-production
+      - FRONTEND_URL=http://localhost:${FRONTEND_PORT:-3000}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - logs_data:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gv-playground-network
+
+  # Frontend Web App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: gv-playground-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3001/api
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - gv-playground-network
+
+  # PgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: gv-playground-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@gvplayground.com
+      PGADMIN_DEFAULT_PASSWORD: StrongPgAdminPassword123!
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - gv-playground-network
+
+  # Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    container_name: gv-playground-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - gv-playground-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
+  logs_data:
+
+networks:
+  gv-playground-network:
+    driver: bridge

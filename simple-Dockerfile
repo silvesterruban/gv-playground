@@ -1,0 +1,28 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY simple-package.json package.json
+
+# Install dependencies
+RUN npm install
+
+# Copy the simple backend
+COPY simple-backend.js .
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S simple -u 1001
+
+# Set ownership
+RUN chown -R simple:nodejs /app
+USER simple
+
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/health || exit 1
+
+CMD ["npm", "start"]

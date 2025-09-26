@@ -1,0 +1,84 @@
+name: Manual Deploy to Playground
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'playground'
+        type: choice
+        options:
+        - playground
+        - staging
+        - production
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: 'latest'
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 898307279366.dkr.ecr.us-east-1.amazonaws.com
+  EKS_CLUSTER_NAME: playground-eks-cluster
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+    - name: Update image tags in deployment files
+      run: |
+        sed -i "s|:latest|:${{ github.event.inputs.image_tag }}|g" k8s/backend-deployment.yaml
+        sed -i "s|:latest|:${{ github.event.inputs.image_tag }}|g" k8s/frontend-deployment.yaml
+
+    - name: Deploy backend
+      run: |
+        kubectl apply -f k8s/backend-deployment.yaml
+
+    - name: Deploy frontend
+      run: |
+        kubectl apply -f k8s/frontend-deployment.yaml
+
+    - name: Deploy ingress
+      run: |
+        kubectl apply -f k8s/ingress.yaml
+
+    - name: Wait for deployment
+      run: |
+        kubectl rollout status deployment/village-backend --timeout=300s
+        kubectl rollout status deployment/village-frontend --timeout=300s
+
+    - name: Get deployment status
+      run: |
+        echo "=== Deployment Status ==="
+        kubectl get pods -l app=village-backend
+        kubectl get pods -l app=village-frontend
+        echo ""
+        echo "=== Services ==="
+        kubectl get services
+        echo ""
+        echo "=== Ingress ==="
+        kubectl get ingress village-platform-ingress
+
+    - name: Get application URL
+      run: |
+        INGRESS_URL=$(kubectl get ingress village-platform-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        echo "🚀 Deployment complete!"
+        echo "📱 Frontend: http://$INGRESS_URL"
+        echo "🔧 Backend API: http://$INGRESS_URL/api"
+        echo "🏥 Health Check: http://$INGRESS_URL/api/health"

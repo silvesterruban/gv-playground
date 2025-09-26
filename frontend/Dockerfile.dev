@@ -1,0 +1,24 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install --legacy-peer-deps
+
+# Copy source code
+COPY . .
+
+# Build the frontend for web (export static files)
+RUN npx expo export --platform web
+
+# Install a simple HTTP server to serve static files
+RUN npm install -g serve
+
+# Expose the port the app runs on
+EXPOSE 3000
+
+# Command to serve the static files
+CMD ["serve", "-s", "dist", "-l", "3000"] 

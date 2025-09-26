@@ -1,0 +1,327 @@
+name: 🚀 CI Pipeline - GV Playground
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: playground-eks-cluster
+  ECR_REGISTRY: 898307279366.dkr.ecr.us-east-1.amazonaws.com
+  ECR_BACKEND_REPO: gv-playground-backend
+  ECR_FRONTEND_REPO: gv-playground-frontend
+
+jobs:
+  # Lint and Test Backend
+  backend-test:
+    name: 🧪 Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: backend/package-lock.json
+        
+    - name: 📥 Install Dependencies
+      run: npm ci
+      
+    - name: 🔍 Lint Code
+      run: npm run lint
+      
+    - name: 🧪 Run Tests
+      run: npm test
+      
+    - name: 🏗️ Build Application
+      run: npm run build
+      
+    - name: 📊 Test Coverage
+      run: npm run test:coverage
+      
+    - name: 📤 Upload Coverage Reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage/lcov.info
+        flags: backend
+        name: backend-coverage
+
+  # Lint and Test Frontend
+  frontend-test:
+    name: 🎨 Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+        
+    - name: 📥 Install Dependencies
+      run: npm ci
+      
+    - name: 🔍 Lint Code
+      run: npm run lint
+      
+    - name: 🧪 Run Tests
+      run: npm test
+      
+    - name: 🏗️ Build Application
+      run: npm run build
+      
+    - name: 📊 Test Coverage
+      run: npm run test:coverage
+      
+    - name: 📤 Upload Coverage Reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./frontend/coverage/lcov.info
+        flags: frontend
+        name: frontend-coverage
+
+  # Security Scanning
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔍 Run Trivy Vulnerability Scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: 📤 Upload Trivy Scan Results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Infrastructure Validation
+  infrastructure-test:
+    name: 🏗️ Infrastructure Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infrastructure
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+        
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🏗️ Terraform Init
+      run: terraform init
+      
+    - name: 🔍 Terraform Validate
+      run: terraform validate
+      
+    - name: 📋 Terraform Plan
+      run: terraform plan -var-file="terraform.tfvars"
+      
+    - name: 🧪 Run Infrastructure Tests
+      run: |
+        chmod +x ../test-app/test-infrastructure.sh
+        ../test-app/test-infrastructure.sh
+
+  # Build and Push Docker Images
+  build-and-push:
+    name: 🐳 Build & Push Images
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test, security-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🐳 Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: 🏗️ Build Backend Image
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_BACKEND_REPO:$GITHUB_SHA ./backend
+        docker tag $ECR_REGISTRY/$ECR_BACKEND_REPO:$GITHUB_SHA $ECR_REGISTRY/$ECR_BACKEND_REPO:latest
+        
+    - name: 🏗️ Build Frontend Image
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_FRONTEND_REPO:$GITHUB_SHA ./frontend
+        docker tag $ECR_REGISTRY/$ECR_FRONTEND_REPO:$GITHUB_SHA $ECR_REGISTRY/$ECR_FRONTEND_REPO:latest
+        
+    - name: 📤 Push Backend Image
+      run: |
+        docker push $ECR_REGISTRY/$ECR_BACKEND_REPO:$GITHUB_SHA
+        docker push $ECR_REGISTRY/$ECR_BACKEND_REPO:latest
+        
+    - name: 📤 Push Frontend Image
+      run: |
+        docker push $ECR_REGISTRY/$ECR_FRONTEND_REPO:$GITHUB_SHA
+        docker push $ECR_REGISTRY/$ECR_FRONTEND_REPO:latest
+
+  # Deploy to Staging
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-and-push, infrastructure-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: staging
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 🚀 Deploy Backend
+      run: |
+        envsubst < k8s/backend-deployment.yaml | kubectl apply -f -
+        
+    - name: 🚀 Deploy Frontend
+      run: |
+        envsubst < k8s/frontend-deployment.yaml | kubectl apply -f -
+        
+    - name: 🚀 Deploy Ingress
+      run: |
+        kubectl apply -f k8s/ingress.yaml
+        
+    - name: 🔍 Verify Deployment
+      run: |
+        kubectl get pods
+        kubectl get services
+        kubectl get ingress
+        
+    - name: 🧪 Run Integration Tests
+      run: |
+        # Wait for pods to be ready
+        kubectl wait --for=condition=ready pod -l app=backend --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=frontend --timeout=300s
+        
+        # Test endpoints
+        ALB_URL=$(kubectl get ingress playground-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        curl -f http://$ALB_URL/api/health || exit 1
+        curl -f http://$ALB_URL/ || exit 1
+
+  # Performance Testing
+  performance-test:
+    name: ⚡ Performance Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup K6
+      run: |
+        sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+        echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+        sudo apt-get update
+        sudo apt-get install k6
+        
+    - name: ⚡ Run Performance Tests
+      run: |
+        # Create a simple K6 test script
+        cat > performance-test.js << 'EOF'
+        import http from 'k6/http';
+        import { check } from 'k6';
+        
+        export let options = {
+          vus: 10,
+          duration: '30s',
+        };
+        
+        export default function() {
+          let response = http.get('http://playground-alb-415409693.us-east-1.elb.amazonaws.com/api/health');
+          check(response, {
+            'status is 200': (r) => r.status === 200,
+            'response time < 500ms': (r) => r.timings.duration < 500,
+          });
+        }
+        EOF
+        
+        k6 run performance-test.js
+
+  # Cleanup on Failure
+  cleanup-on-failure:
+    name: 🧹 Cleanup on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: failure()
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 🧹 Rollback Deployment
+      run: |
+        kubectl rollout undo deployment/backend
+        kubectl rollout undo deployment/frontend
+        
+    - name: 📧 Notify Failure
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      if: always()

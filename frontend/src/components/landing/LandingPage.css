@@ -1,0 +1,170 @@
+/* Dark theme landing page CSS */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: #121824;
+  color: #ffffff;
+}
+
+/* Web specific styles */
+@media screen and (min-width: 768px) {
+  .container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .content {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 20px;
+  }
+
+  .statsContainer {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    margin-top: 40px;
+  }
+
+  .buttonContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 900px;
+    margin: 40px auto;
+  }
+
+  .roleSection {
+    margin-bottom: 30px;
+    width: 100%;
+    background-color: rgba(25, 26, 45, 0.7);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  
+  .roleSection:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .button {
+    padding: 12px 30px;
+    border-radius: 8px;
+    min-width: 150px;
+    text-align: center;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    margin: 0 10px;
+  }
+  
+  .button:hover {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+
+  .modalContainer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+
+  .modalContent {
+    background-color: #1E1F38;
+    border-radius: 10px;
+    padding: 30px;
+    width: 80%;
+    max-width: 500px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* Animation for fade-in effect */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.title, .subtitle, .heroContent, .statItem, .roleSection {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+.title {
+  animation-delay: 0.1s;
+}
+
+.subtitle {
+  animation-delay: 0.2s;
+}
+
+.heroContent {
+  animation-delay: 0.3s;
+}
+
+.statItem:nth-child(1) {
+  animation-delay: 0.4s;
+}
+
+.statItem:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.statItem:nth-child(3) {
+  animation-delay: 0.6s;
+}
+
+.roleSection:nth-child(1) {
+  animation-delay: 0.7s;
+}
+
+.roleSection:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+.roleSection:nth-child(3) {
+  animation-delay: 0.9s;
+}
+
+/* Custom gradient background for web */
+.overlay {
+  background: linear-gradient(135deg, #121824 0%, #1E2233 100%);
+  min-height: 100vh;
+}
+
+/* Glass effect for stats items */
+.statItem {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom button effects */
+.studentButton {
+  background: linear-gradient(135deg, #4285F4 0%, #2B6DEF 100%);
+}
+
+.donorButton {
+  background: linear-gradient(135deg, #34A853 0%, #2D8745 100%);
+}
+
+.adminButton {
+  background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
+}

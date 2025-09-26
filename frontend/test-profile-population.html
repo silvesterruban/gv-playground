@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile Data Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-button {
+            background-color: #4285F4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background-color: #3367D6;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Profile Data Population Test</h1>
+        <p>This page helps test if profile data is being properly fetched and populated in the modals.</p>
+
+        <div class="test-section">
+            <h3>1. Test API Connectivity</h3>
+            <button class="test-button" onclick="testAPIConnectivity()">Test API Connection</button>
+            <div id="api-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>2. Test Profile Data Fetch</h3>
+            <button class="test-button" onclick="testProfileFetch()">Fetch Profile Data</button>
+            <div id="profile-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>3. Test Modal Data Population</h3>
+            <button class="test-button" onclick="testModalPopulation()">Test Modal Population</button>
+            <div id="modal-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>4. Debug Information</h3>
+            <button class="test-button" onclick="showDebugInfo()">Show Debug Info</button>
+            <div id="debug-result" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://3.234.140.112:3001';
+        
+        function showResult(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `result ${type}`;
+        }
+
+        async function testAPIConnectivity() {
+            try {
+                showResult('api-result', 'Testing API connectivity...', 'info');
+                
+                const response = await fetch(`${API_BASE_URL}/health`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('api-result', `✅ API is accessible\nStatus: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    showResult('api-result', `❌ API returned error\nStatus: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}`, 'error');
+                }
+            } catch (error) {
+                showResult('api-result', `❌ API connection failed\nError: ${error.message}`, 'error');
+            }
+        }
+
+        async function testProfileFetch() {
+            try {
+                showResult('profile-result', 'Testing profile data fetch...', 'info');
+                
+                // This will return 401 Unauthorized, which is expected
+                const response = await fetch(`${API_BASE_URL}/api/students/profile`);
+                const data = await response.json();
+                
+                if (response.status === 401) {
+                    showResult('profile-result', `✅ Profile endpoint is working (401 Unauthorized expected)\nStatus: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else if (response.ok) {
+                    showResult('profile-result', `✅ Profile data fetched successfully\nStatus: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    showResult('profile-result', `⚠️ Profile endpoint returned unexpected status\nStatus: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}`, 'error');
+                }
+            } catch (error) {
+                showResult('profile-result', `❌ Profile fetch failed\nError: ${error.message}`, 'error');
+            }
+        }
+
+        function testModalPopulation() {
+            showResult('modal-result', `🔍 Modal Population Test\n\nTo test modal data population:\n\n1. Go to the main application: http://3.234.140.112:3000\n2. Login with your credentials\n3. Click "Edit Profile" or "Complete Profile"\n4. Check if the form fields are pre-populated\n5. Open browser console (F12) and look for:\n   - [EditProfileModal] Using profileData from parent\n   - [EditProfileModal] Profile data: {...}\n   - Any error messages\n\nExpected behavior:\n- Form fields should show current user data\n- Console should show profile data being used\n- No API errors should appear`, 'info');
+        }
+
+        function showDebugInfo() {
+            const debugInfo = {
+                currentURL: window.location.href,
+                userAgent: navigator.userAgent,
+                timestamp: new Date().toISOString(),
+                apiBaseUrl: API_BASE_URL,
+                frontendUrl: 'http://3.234.140.112:3000',
+                expectedBehavior: [
+                    'Profile modal should pre-populate with user data',
+                    'API calls should use correct endpoints',
+                    'No hardcoded local IP addresses',
+                    'CORS headers should be present'
+                ],
+                troubleshootingSteps: [
+                    'Check browser console for errors',
+                    'Verify API endpoints are accessible',
+                    'Test with authenticated user',
+                    'Check network tab for failed requests'
+                ]
+            };
+            
+            showResult('debug-result', `🔧 Debug Information\n\n${JSON.stringify(debugInfo, null, 2)}`, 'info');
+        }
+
+        // Auto-run API connectivity test on page load
+        window.addEventListener('load', () => {
+            testAPIConnectivity();
+        });
+    </script>
+</body>
+</html> 

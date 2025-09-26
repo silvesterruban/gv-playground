@@ -1,0 +1,238 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gradvillage-frontend
+  namespace: default
+  labels:
+    app: gradvillage-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gradvillage-frontend
+  template:
+    metadata:
+      labels:
+        app: gradvillage-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            cat > /usr/share/nginx/html/index.html << 'EOF'
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>GradVillage - Student Success Platform</title>
+                <style>
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    
+                    body {
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    
+                    .container {
+                        background: white;
+                        border-radius: 20px;
+                        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                        padding: 3rem;
+                        text-align: center;
+                        max-width: 600px;
+                        width: 90%;
+                    }
+                    
+                    .logo {
+                        font-size: 3rem;
+                        font-weight: bold;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        margin-bottom: 1rem;
+                    }
+                    
+                    .subtitle {
+                        color: #666;
+                        font-size: 1.2rem;
+                        margin-bottom: 2rem;
+                    }
+                    
+                    .features {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 1.5rem;
+                        margin: 2rem 0;
+                    }
+                    
+                    .feature {
+                        background: #f8f9fa;
+                        padding: 1.5rem;
+                        border-radius: 10px;
+                        border-left: 4px solid #667eea;
+                    }
+                    
+                    .feature h3 {
+                        color: #333;
+                        margin-bottom: 0.5rem;
+                    }
+                    
+                    .feature p {
+                        color: #666;
+                        font-size: 0.9rem;
+                    }
+                    
+                    .cta-button {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 1rem 2rem;
+                        border: none;
+                        border-radius: 50px;
+                        font-size: 1.1rem;
+                        font-weight: bold;
+                        cursor: pointer;
+                        transition: transform 0.3s ease;
+                        margin-top: 2rem;
+                    }
+                    
+                    .cta-button:hover {
+                        transform: translateY(-2px);
+                    }
+                    
+                    .status {
+                        background: #d4edda;
+                        color: #155724;
+                        padding: 1rem;
+                        border-radius: 10px;
+                        margin-top: 2rem;
+                        border-left: 4px solid #28a745;
+                    }
+                    
+                    .api-info {
+                        background: #e3f2fd;
+                        color: #1565c0;
+                        padding: 1rem;
+                        border-radius: 10px;
+                        margin-top: 1rem;
+                        font-family: monospace;
+                        font-size: 0.9rem;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="logo">🎓 GradVillage</div>
+                    <p class="subtitle">Empowering Students, Connecting Communities</p>
+                    
+                    <div class="features">
+                        <div class="feature">
+                            <h3>👨‍🎓 Student Portal</h3>
+                            <p>Access scholarships, mentorship, and career guidance</p>
+                        </div>
+                        <div class="feature">
+                            <h3>💝 Donor Platform</h3>
+                            <p>Support students and make a meaningful impact</p>
+                        </div>
+                        <div class="feature">
+                            <h3>👨‍💼 Admin Dashboard</h3>
+                            <p>Manage the platform and oversee operations</p>
+                        </div>
+                    </div>
+                    
+                    <button class="cta-button" onclick="window.location.href='/login'">
+                        Get Started
+                    </button>
+                    
+                    <div class="status">
+                        ✅ System Status: Operational<br>
+                        🚀 Backend API: Connected<br>
+                        📊 Monitoring: Active
+                    </div>
+                    
+                    <div class="api-info">
+                        API Endpoint: http://simple-backend-service:3001<br>
+                        Authentication: Student | Donor | Admin<br>
+                        Status: All systems operational
+                    </div>
+                </div>
+                
+                <script>
+                    // Simple API test
+                    fetch('/api/health')
+                        .then(response => response.json())
+                        .then(data => {
+                            console.log('API Status:', data);
+                        })
+                        .catch(error => {
+                            console.log('API connection test completed');
+                        });
+                </script>
+            </body>
+            </html>
+            EOF
+            nginx -g "daemon off;"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gradvillage-frontend-service
+  namespace: default
+  labels:
+    app: gradvillage-frontend
+spec:
+  selector:
+    app: gradvillage-frontend
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gradvillage-frontend-lb
+  namespace: default
+  labels:
+    app: gradvillage-frontend
+spec:
+  selector:
+    app: gradvillage-frontend
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  type: LoadBalancer

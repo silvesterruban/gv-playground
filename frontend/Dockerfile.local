@@ -1,0 +1,37 @@
+# Frontend Dockerfile for Local Development
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache python3 make g++ git
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+COPY app.json ./
+COPY babel.config.js ./
+COPY metro.config.js ./
+
+# Install dependencies with legacy peer deps to resolve Expo conflicts
+RUN npm install --legacy-peer-deps
+
+# Copy source code
+COPY . .
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
+RUN chown -R nodejs:nodejs /app
+USER nodejs
+
+# Expose ports
+EXPOSE 3000 8081
+
+# Health check - check the web port (8081) since that's where the web server runs
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8081', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+# Development command - use the web script specifically
+CMD ["npm", "run", "web"]

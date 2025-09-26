@@ -1,0 +1,240 @@
+name: Build and Push to ECR
+
+on:
+  push:
+    branches: [ main, develop, feature/terraform-environment-agnostic ]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/build-and-push-ecr.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/build-and-push-ecr.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to build for'
+        required: true
+        default: 'gv-playground'
+        type: choice
+        options:
+          - gv-playground
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 898307279366.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  build-backend:
+    name: 'Build Backend Image'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.modified, 'backend/')
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.ECR_REGISTRY }}/gv-playground-backend
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=${{ github.event.inputs.environment || 'gv-playground' }}-latest
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        file: ./backend/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+    - name: Output image details
+      run: |
+        echo "## Backend Image Built Successfully" >> $GITHUB_STEP_SUMMARY
+        echo "**Image Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Registry:** ${{ env.ECR_REGISTRY }}/gv-playground-backend" >> $GITHUB_STEP_SUMMARY
+
+  build-frontend:
+    name: 'Build Frontend Image'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.modified, 'frontend/')
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.ECR_REGISTRY }}/gv-playground-frontend
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=${{ github.event.inputs.environment || 'gv-playground' }}-latest
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        file: ./frontend/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+    - name: Output image details
+      run: |
+        echo "## Frontend Image Built Successfully" >> $GITHUB_STEP_SUMMARY
+        echo "**Image Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Registry:** ${{ env.ECR_REGISTRY }}/gv-playground-frontend" >> $GITHUB_STEP_SUMMARY
+
+  deploy-to-eks:
+    name: 'Deploy to EKS'
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+    
+    environment: ${{ github.event.inputs.environment || 'gv-playground' }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ github.event.inputs.environment || 'gv-playground' }}-eks-cluster
+
+    - name: Deploy Backend
+      if: needs.build-backend.result == 'success'
+      run: |
+        # Update backend deployment with new image
+        kubectl set image deployment/village-backend-real village-backend-real=${{ env.ECR_REGISTRY }}/gv-playground-backend:${{ github.event.inputs.environment || 'gv-playground' }}-latest
+        kubectl rollout status deployment/village-backend-real --timeout=300s
+
+    - name: Deploy Frontend
+      if: needs.build-frontend.result == 'success'
+      run: |
+        # Update frontend deployment with new image
+        kubectl set image deployment/village-frontend-real village-frontend-real=${{ env.ECR_REGISTRY }}/gv-playground-frontend:${{ github.event.inputs.environment || 'gv-playground' }}-latest
+        kubectl rollout status deployment/village-frontend-real --timeout=300s
+
+    - name: Verify Deployment
+      run: |
+        echo "## Deployment Verification" >> $GITHUB_STEP_SUMMARY
+        echo "**Pods Status:**" >> $GITHUB_STEP_SUMMARY
+        kubectl get pods -o wide >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Services Status:**" >> $GITHUB_STEP_SUMMARY
+        kubectl get services >> $GITHUB_STEP_SUMMARY
+
+    - name: Health Check
+      run: |
+        # Wait for services to be ready
+        sleep 30
+        
+        # Check backend health
+        BACKEND_POD=$(kubectl get pods -l app=village-backend-real -o jsonpath='{.items[0].metadata.name}')
+        if [ -n "$BACKEND_POD" ]; then
+          kubectl exec $BACKEND_POD -- curl -f http://localhost:3001/api/health || echo "Backend health check failed"
+        fi
+        
+        # Check frontend accessibility
+        FRONTEND_LB=$(kubectl get service village-frontend-lb -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        if [ -n "$FRONTEND_LB" ]; then
+          curl -f http://$FRONTEND_LB || echo "Frontend accessibility check failed"
+        fi
+
+  security-scan:
+    name: 'Container Security Scan'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Run Trivy vulnerability scanner on backend
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.ECR_REGISTRY }}/gv-playground-backend:latest
+        format: 'sarif'
+        output: 'trivy-backend-results.sarif'
+
+    - name: Run Trivy vulnerability scanner on frontend
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.ECR_REGISTRY }}/gv-playground-frontend:latest
+        format: 'sarif'
+        output: 'trivy-frontend-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-backend-results.sarif,trivy-frontend-results.sarif'

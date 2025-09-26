@@ -1,0 +1,420 @@
+name: 📊 Monitoring & Alerting Setup
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'monitoring/**'
+      - 'k8s/monitoring/**'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Monitoring action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+        - deploy
+        - update
+        - remove
+      environment:
+        description: 'Environment to target'
+        required: true
+        default: 'playground'
+        type: choice
+        options:
+        - playground
+        - staging
+        - production
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: playground-eks-cluster
+
+jobs:
+  # Deploy Monitoring Stack
+  deploy-monitoring:
+    name: 📊 Deploy Monitoring Stack
+    runs-on: ubuntu-latest
+    if: inputs.action == 'deploy' || inputs.action == 'update' || github.event_name == 'push'
+    environment: ${{ inputs.environment || 'playground' }}
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 📊 Create Monitoring Namespace
+      run: |
+        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+        
+    - name: 📊 Deploy Prometheus
+      run: |
+        # Deploy Prometheus
+        kubectl apply -f k8s/monitoring/prometheus-deployment.yaml
+        kubectl apply -f k8s/monitoring/prometheus-config.yaml
+        kubectl apply -f k8s/monitoring/prometheus-service.yaml
+        
+        # Wait for Prometheus to be ready
+        kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=300s
+        
+    - name: 📊 Deploy Grafana
+      run: |
+        # Deploy Grafana
+        kubectl apply -f k8s/monitoring/grafana-deployment.yaml
+        kubectl apply -f k8s/monitoring/grafana-service.yaml
+        kubectl apply -f k8s/monitoring/grafana-configmap.yaml
+        
+        # Wait for Grafana to be ready
+        kubectl wait --for=condition=ready pod -l app=grafana -n monitoring --timeout=300s
+        
+    - name: 📊 Deploy AlertManager
+      run: |
+        # Deploy AlertManager
+        kubectl apply -f k8s/monitoring/alertmanager-deployment.yaml
+        kubectl apply -f k8s/monitoring/alertmanager-config.yaml
+        kubectl apply -f k8s/monitoring/alertmanager-service.yaml
+        
+        # Wait for AlertManager to be ready
+        kubectl wait --for=condition=ready pod -l app=alertmanager -n monitoring --timeout=300s
+        
+    - name: 📊 Deploy Node Exporter
+      run: |
+        # Deploy Node Exporter DaemonSet
+        kubectl apply -f k8s/monitoring/node-exporter-daemonset.yaml
+        kubectl apply -f k8s/monitoring/node-exporter-service.yaml
+        
+    - name: 📊 Deploy Kube State Metrics
+      run: |
+        # Deploy Kube State Metrics
+        kubectl apply -f k8s/monitoring/kube-state-metrics-deployment.yaml
+        kubectl apply -f k8s/monitoring/kube-state-metrics-service.yaml
+        
+    - name: 📊 Deploy Application Metrics
+      run: |
+        # Deploy custom application metrics
+        kubectl apply -f k8s/monitoring/application-metrics.yaml
+        
+    - name: 📊 Setup CloudWatch Integration
+      run: |
+        # Deploy CloudWatch agent
+        kubectl apply -f k8s/monitoring/cloudwatch-agent.yaml
+        
+        # Deploy Fluent Bit for log aggregation
+        kubectl apply -f k8s/monitoring/fluent-bit.yaml
+        
+    - name: 📊 Verify Monitoring Stack
+      run: |
+        echo "=== Monitoring Stack Status ==="
+        kubectl get pods -n monitoring
+        kubectl get services -n monitoring
+        
+        echo "=== Prometheus Status ==="
+        kubectl get pods -l app=prometheus -n monitoring
+        
+        echo "=== Grafana Status ==="
+        kubectl get pods -l app=grafana -n monitoring
+        
+        echo "=== AlertManager Status ==="
+        kubectl get pods -l app=alertmanager -n monitoring
+
+  # Configure Alerts
+  configure-alerts:
+    name: 🚨 Configure Alerts
+    runs-on: ubuntu-latest
+    needs: [deploy-monitoring]
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 🚨 Deploy Prometheus Alert Rules
+      run: |
+        # Deploy alert rules
+        kubectl apply -f k8s/monitoring/prometheus-alert-rules.yaml
+        
+    - name: 🚨 Configure AlertManager
+      run: |
+        # Create AlertManager configuration
+        cat > alertmanager-config.yaml << EOF
+        global:
+          smtp_smarthost: 'localhost:587'
+          smtp_from: 'alerts@company.com'
+        
+        route:
+          group_by: ['alertname']
+          group_wait: 10s
+          group_interval: 10s
+          repeat_interval: 1h
+          receiver: 'web.hook'
+          routes:
+          - match:
+              severity: critical
+            receiver: 'critical-alerts'
+          - match:
+              severity: warning
+            receiver: 'warning-alerts'
+        
+        receivers:
+        - name: 'web.hook'
+          webhook_configs:
+          - url: '${{ secrets.ALERT_WEBHOOK_URL }}'
+        
+        - name: 'critical-alerts'
+          slack_configs:
+          - api_url: '${{ secrets.SLACK_WEBHOOK }}'
+            channel: '#critical-alerts'
+            title: 'Critical Alert: {{ .GroupLabels.alertname }}'
+            text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        
+        - name: 'warning-alerts'
+          slack_configs:
+          - api_url: '${{ secrets.SLACK_WEBHOOK }}'
+            channel: '#monitoring'
+            title: 'Warning Alert: {{ .GroupLabels.alertname }}'
+            text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        EOF
+        
+        kubectl create configmap alertmanager-config --from-file=alertmanager.yml=alertmanager-config.yaml -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+        
+    - name: 🚨 Setup CloudWatch Alarms
+      run: |
+        # Create CloudWatch alarms for EKS cluster
+        aws cloudwatch put-metric-alarm \
+          --alarm-name "playground-eks-cpu-high" \
+          --alarm-description "EKS cluster CPU utilization is high" \
+          --metric-name CPUUtilization \
+          --namespace AWS/EKS \
+          --statistic Average \
+          --period 300 \
+          --threshold 80 \
+          --comparison-operator GreaterThanThreshold \
+          --evaluation-periods 2 \
+          --alarm-actions arn:aws:sns:us-east-1:898307279366:playground-alerts
+        
+        # Create CloudWatch alarms for RDS
+        aws cloudwatch put-metric-alarm \
+          --alarm-name "playground-rds-cpu-high" \
+          --alarm-description "RDS CPU utilization is high" \
+          --metric-name CPUUtilization \
+          --namespace AWS/RDS \
+          --statistic Average \
+          --period 300 \
+          --threshold 80 \
+          --comparison-operator GreaterThanThreshold \
+          --evaluation-periods 2 \
+          --dimensions Name=DBInstanceIdentifier,Value=playground-postgres \
+          --alarm-actions arn:aws:sns:us-east-1:898307279366:playground-alerts
+
+  # Setup Dashboards
+  setup-dashboards:
+    name: 📊 Setup Dashboards
+    runs-on: ubuntu-latest
+    needs: [deploy-monitoring]
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 📊 Deploy Grafana Dashboards
+      run: |
+        # Deploy Kubernetes dashboard
+        kubectl apply -f k8s/monitoring/grafana-kubernetes-dashboard.yaml
+        
+        # Deploy Node dashboard
+        kubectl apply -f k8s/monitoring/grafana-node-dashboard.yaml
+        
+        # Deploy Application dashboard
+        kubectl apply -f k8s/monitoring/grafana-application-dashboard.yaml
+        
+    - name: 📊 Setup CloudWatch Dashboard
+      run: |
+        # Deploy CloudWatch dashboard
+        aws cloudwatch put-dashboard \
+          --dashboard-name "GV-Playground-Monitoring" \
+          --dashboard-body file://monitoring/cloudwatch-dashboard.json
+
+  # Performance Testing
+  performance-testing:
+    name: ⚡ Performance Testing
+    runs-on: ubuntu-latest
+    needs: [deploy-monitoring, configure-alerts]
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup K6
+      run: |
+        sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+        echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+        sudo apt-get update
+        sudo apt-get install k6
+        
+    - name: ⚡ Run Load Tests
+      run: |
+        # Create performance test script
+        cat > performance-test.js << 'EOF'
+        import http from 'k6/http';
+        import { check, sleep } from 'k6';
+        import { Rate } from 'k6/metrics';
+        
+        const errorRate = new Rate('errors');
+        
+        export let options = {
+          stages: [
+            { duration: '2m', target: 10 },
+            { duration: '5m', target: 10 },
+            { duration: '2m', target: 20 },
+            { duration: '5m', target: 20 },
+            { duration: '2m', target: 0 },
+          ],
+          thresholds: {
+            http_req_duration: ['p(95)<500'],
+            errors: ['rate<0.1'],
+          },
+        };
+        
+        export default function() {
+          let response = http.get('http://playground-alb-415409693.us-east-1.elb.amazonaws.com/api/health');
+          let success = check(response, {
+            'status is 200': (r) => r.status === 200,
+            'response time < 500ms': (r) => r.timings.duration < 500,
+          });
+          errorRate.add(!success);
+          sleep(1);
+        }
+        EOF
+        
+        k6 run performance-test.js
+        
+    - name: 📊 Generate Performance Report
+      run: |
+        echo "Performance test completed. Check monitoring dashboards for detailed metrics."
+
+  # Monitoring Health Check
+  monitoring-health-check:
+    name: 🏥 Monitoring Health Check
+    runs-on: ubuntu-latest
+    needs: [deploy-monitoring, configure-alerts, setup-dashboards]
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 🏥 Check Monitoring Stack Health
+      run: |
+        echo "=== Monitoring Stack Health Check ==="
+        
+        # Check Prometheus
+        PROMETHEUS_POD=$(kubectl get pods -l app=prometheus -n monitoring -o jsonpath='{.items[0].metadata.name}')
+        kubectl exec -n monitoring $PROMETHEUS_POD -- wget -qO- http://localhost:9090/api/v1/query?query=up
+        
+        # Check Grafana
+        GRAFANA_POD=$(kubectl get pods -l app=grafana -n monitoring -o jsonpath='{.items[0].metadata.name}')
+        kubectl exec -n monitoring $GRAFANA_POD -- wget -qO- http://localhost:3000/api/health
+        
+        # Check AlertManager
+        ALERTMANAGER_POD=$(kubectl get pods -l app=alertmanager -n monitoring -o jsonpath='{.items[0].metadata.name}')
+        kubectl exec -n monitoring $ALERTMANAGER_POD -- wget -qO- http://localhost:9093/api/v1/status
+        
+        echo "✅ All monitoring components are healthy"
+        
+    - name: 📊 Generate Monitoring Report
+      run: |
+        cat > monitoring-report.md << 'EOF'
+        # 📊 Monitoring Setup Report
+        
+        **Date**: $(date)
+        **Environment**: playground
+        **Region**: us-east-1
+        
+        ## 📊 Monitoring Components
+        
+        | Component | Status | Endpoint |
+        |-----------|--------|----------|
+        | Prometheus | ✅ Running | http://prometheus.monitoring.svc.cluster.local:9090 |
+        | Grafana | ✅ Running | http://grafana.monitoring.svc.cluster.local:3000 |
+        | AlertManager | ✅ Running | http://alertmanager.monitoring.svc.cluster.local:9093 |
+        | Node Exporter | ✅ Running | DaemonSet on all nodes |
+        | Kube State Metrics | ✅ Running | http://kube-state-metrics.monitoring.svc.cluster.local:8080 |
+        
+        ## 🚨 Alerting Configuration
+        
+        - **Critical Alerts**: Sent to #critical-alerts Slack channel
+        - **Warning Alerts**: Sent to #monitoring Slack channel
+        - **CloudWatch Alarms**: Configured for EKS and RDS
+        
+        ## 📊 Dashboards
+        
+        - **Kubernetes Dashboard**: Complete cluster overview
+        - **Node Dashboard**: Node-level metrics
+        - **Application Dashboard**: Application-specific metrics
+        - **CloudWatch Dashboard**: AWS resource metrics
+        
+        ## 🎯 Next Steps
+        
+        1. Access Grafana dashboards
+        2. Configure additional alerts as needed
+        3. Set up log aggregation
+        4. Configure backup and retention policies
+        
+        EOF
+        
+    - name: 📤 Upload Monitoring Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: monitoring-setup-report-$(date +%Y%m%d)
+        path: monitoring-report.md
+        
+    - name: 📧 Send Monitoring Setup Notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#monitoring'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      if: success()

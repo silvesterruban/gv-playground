@@ -1,0 +1,17 @@
+{
+  "watch": ["src"],
+  "ext": "ts,json",
+  "ignore": [
+    "prisma/*",
+    "prisma/migrations/*",
+    "prisma/seed.ts",
+    "*.test.ts",
+    "*.spec.ts",
+    "node_modules/*",
+    "dist/*"
+  ],
+  "exec": "ts-node src/index.ts",
+  "events": {
+    "restart": "lsof -ti:3001 | xargs kill -9 || true"
+  }
+} 

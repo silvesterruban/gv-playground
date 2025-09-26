@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            background-color: #4285F4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px;
+            font-size: 16px;
+        }
+        .test-button:hover {
+            background-color: #3367D6;
+        }
+        .success {
+            color: #28a745;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .info {
+            color: #0c5460;
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 API Connection Test</h1>
+        
+        <div class="info">
+            <h3>Test Information:</h3>
+            <p><strong>Local API:</strong> http://192.168.1.5:3001</p>
+            <p><strong>AWS API:</strong> http://3.234.140.112:3001</p>
+            <p><strong>Frontend:</strong> http://3.234.140.112:3000</p>
+        </div>
+
+        <h2>Test Buttons</h2>
+        <button class="test-button" onclick="testLocalAPI()">Test Local API (192.168.1.5:3001)</button>
+        <button class="test-button" onclick="testAWSAPI()">Test AWS API (3.234.140.112:3001)</button>
+        <button class="test-button" onclick="testProfileEndpoint()">Test Profile Endpoint</button>
+        <button class="test-button" onclick="clearLogs()">Clear Logs</button>
+
+        <h2>Test Results</h2>
+        <div id="results"></div>
+
+        <h2>Console Logs</h2>
+        <div id="console-logs" class="log"></div>
+    </div>
+
+    <script>
+        const resultsContainer = document.getElementById('results');
+        const logsContainer = document.getElementById('console-logs');
+
+        function addResult(message, type = 'info') {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = type;
+            resultDiv.innerHTML = `<strong>[${new Date().toLocaleTimeString()}]</strong> ${message}`;
+            resultsContainer.appendChild(resultDiv);
+        }
+
+        function addLog(message) {
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        async function testLocalAPI() {
+            addLog('Testing local API connection...');
+            try {
+                const response = await fetch('http://192.168.1.5:3001/api/health');
+                const data = await response.text();
+                addResult(`Local API: ${response.status} - ${data}`, 'success');
+                addLog(`Local API response: ${response.status} ${data}`);
+            } catch (error) {
+                addResult(`Local API: Failed - ${error.message}`, 'error');
+                addLog(`Local API error: ${error.message}`);
+            }
+        }
+
+        async function testAWSAPI() {
+            addLog('Testing AWS API connection...');
+            try {
+                const response = await fetch('http://3.234.140.112:3001/api/health');
+                const data = await response.text();
+                addResult(`AWS API: ${response.status} - ${data}`, 'success');
+                addLog(`AWS API response: ${response.status} ${data}`);
+            } catch (error) {
+                addResult(`AWS API: Failed - ${error.message}`, 'error');
+                addLog(`AWS API error: ${error.message}`);
+            }
+        }
+
+        async function testProfileEndpoint() {
+            addLog('Testing profile endpoint...');
+            try {
+                const response = await fetch('http://3.234.140.112:3001/api/students/profile');
+                addResult(`Profile endpoint: ${response.status} - ${response.statusText}`, response.ok ? 'success' : 'error');
+                addLog(`Profile endpoint response: ${response.status} ${response.statusText}`);
+                
+                if (response.status === 401) {
+                    addLog('Expected 401 - endpoint requires authentication');
+                }
+            } catch (error) {
+                addResult(`Profile endpoint: Failed - ${error.message}`, 'error');
+                addLog(`Profile endpoint error: ${error.message}`);
+            }
+        }
+
+        function clearLogs() {
+            resultsContainer.innerHTML = '';
+            logsContainer.innerHTML = '';
+            addLog('Logs cleared');
+        }
+
+        // Initial log
+        addLog('API Connection Test Page Loaded');
+        addResult('Ready to test API connections', 'info');
+    </script>
+</body>
+</html> 

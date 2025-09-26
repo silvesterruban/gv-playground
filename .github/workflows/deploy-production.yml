@@ -1,0 +1,439 @@
+name: 🚀 Production Deployment - GV Playground
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+      version:
+        description: 'Version to deploy'
+        required: false
+        default: 'latest'
+        type: string
+      skip_tests:
+        description: 'Skip tests (not recommended)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: playground-eks-cluster
+  ECR_REGISTRY: 898307279366.dkr.ecr.us-east-1.amazonaws.com
+  ECR_BACKEND_REPO: gv-playground-backend
+  ECR_FRONTEND_REPO: gv-playground-frontend
+
+jobs:
+  # Pre-deployment Checks
+  pre-deployment-checks:
+    name: 🔍 Pre-deployment Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🏗️ Check Infrastructure Status
+      run: |
+        echo "Checking EKS cluster status..."
+        aws eks describe-cluster --name $EKS_CLUSTER_NAME --query 'cluster.status'
+        
+        echo "Checking RDS status..."
+        aws rds describe-db-instances --db-instance-identifier playground-postgres --query 'DBInstances[0].DBInstanceStatus'
+        
+        echo "Checking ALB status..."
+        aws elbv2 describe-load-balancers --names playground-alb --query 'LoadBalancers[0].State.Code'
+        
+    - name: 🔍 Check ECR Images
+      run: |
+        echo "Checking backend image..."
+        aws ecr describe-images --repository-name $ECR_BACKEND_REPO --image-ids imageTag=latest
+        
+        echo "Checking frontend image..."
+        aws ecr describe-images --repository-name $ECR_FRONTEND_REPO --image-ids imageTag=latest
+        
+    - name: 🧪 Run Smoke Tests
+      if: ${{ !inputs.skip_tests }}
+      run: |
+        chmod +x test-app/test-infrastructure.sh
+        ./test-app/test-infrastructure.sh
+
+  # Blue-Green Deployment
+  blue-green-deployment:
+    name: 🔄 Blue-Green Deployment
+    runs-on: ubuntu-latest
+    needs: [pre-deployment-checks]
+    environment: ${{ inputs.environment }}
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 📊 Get Current Deployment Status
+      id: current-status
+      run: |
+        # Get current replica counts
+        BACKEND_REPLICAS=$(kubectl get deployment backend -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+        FRONTEND_REPLICAS=$(kubectl get deployment frontend -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+        
+        echo "backend_replicas=$BACKEND_REPLICAS" >> $GITHUB_OUTPUT
+        echo "frontend_replicas=$FRONTEND_REPLICAS" >> $GITHUB_OUTPUT
+        
+        # Get current image tags
+        BACKEND_IMAGE=$(kubectl get deployment backend -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")
+        FRONTEND_IMAGE=$(kubectl get deployment frontend -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")
+        
+        echo "backend_image=$BACKEND_IMAGE" >> $GITHUB_OUTPUT
+        echo "frontend_image=$FRONTEND_IMAGE" >> $GITHUB_OUTPUT
+        
+    - name: 🚀 Deploy Backend (Green)
+      run: |
+        # Create green deployment
+        cat > backend-green-deployment.yaml << EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: backend-green
+          labels:
+            app: backend
+            version: green
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: backend
+              version: green
+          template:
+            metadata:
+              labels:
+                app: backend
+                version: green
+            spec:
+              containers:
+              - name: backend
+                image: $ECR_REGISTRY/$ECR_BACKEND_REPO:${{ inputs.version || 'latest' }}
+                ports:
+                - containerPort: 3001
+                env:
+                - name: NODE_ENV
+                  value: "${{ inputs.environment }}"
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-secret
+                      key: url
+                resources:
+                  requests:
+                    memory: "256Mi"
+                    cpu: "250m"
+                  limits:
+                    memory: "512Mi"
+                    cpu: "500m"
+                livenessProbe:
+                  httpGet:
+                    path: /api/health
+                    port: 3001
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                readinessProbe:
+                  httpGet:
+                    path: /api/health
+                    port: 3001
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+        EOF
+        
+        kubectl apply -f backend-green-deployment.yaml
+        
+    - name: 🚀 Deploy Frontend (Green)
+      run: |
+        # Create green deployment
+        cat > frontend-green-deployment.yaml << EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: frontend-green
+          labels:
+            app: frontend
+            version: green
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: frontend
+              version: green
+          template:
+            metadata:
+              labels:
+                app: frontend
+                version: green
+            spec:
+              containers:
+              - name: frontend
+                image: $ECR_REGISTRY/$ECR_FRONTEND_REPO:${{ inputs.version || 'latest' }}
+                ports:
+                - containerPort: 80
+                env:
+                - name: REACT_APP_API_URL
+                  value: "http://playground-alb-415409693.us-east-1.elb.amazonaws.com/api"
+                resources:
+                  requests:
+                    memory: "128Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "256Mi"
+                    cpu: "200m"
+                livenessProbe:
+                  httpGet:
+                    path: /
+                    port: 80
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                readinessProbe:
+                  httpGet:
+                    path: /
+                    port: 80
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+        EOF
+        
+        kubectl apply -f frontend-green-deployment.yaml
+        
+    - name: ⏳ Wait for Green Deployment
+      run: |
+        echo "Waiting for backend-green to be ready..."
+        kubectl wait --for=condition=available deployment/backend-green --timeout=300s
+        
+        echo "Waiting for frontend-green to be ready..."
+        kubectl wait --for=condition=available deployment/frontend-green --timeout=300s
+        
+    - name: 🧪 Test Green Deployment
+      run: |
+        # Create test service for green deployment
+        cat > green-test-service.yaml << EOF
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: backend-green-test
+        spec:
+          selector:
+            app: backend
+            version: green
+          ports:
+          - port: 3001
+            targetPort: 3001
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: frontend-green-test
+        spec:
+          selector:
+            app: frontend
+            version: green
+          ports:
+          - port: 80
+            targetPort: 80
+        EOF
+        
+        kubectl apply -f green-test-service.yaml
+        
+        # Test backend
+        kubectl run test-pod --image=curlimages/curl --rm -i --restart=Never -- \
+          curl -f http://backend-green-test:3001/api/health
+        
+        # Test frontend
+        kubectl run test-pod --image=curlimages/curl --rm -i --restart=Never -- \
+          curl -f http://frontend-green-test:80/
+        
+    - name: 🔄 Switch Traffic to Green
+      run: |
+        # Update main services to point to green deployment
+        kubectl patch service backend-service -p '{"spec":{"selector":{"version":"green"}}}'
+        kubectl patch service frontend-service -p '{"spec":{"selector":{"version":"green"}}}'
+        
+        # Wait for traffic to switch
+        sleep 30
+        
+    - name: 🧪 Verify Traffic Switch
+      run: |
+        # Test ALB endpoints
+        ALB_URL="http://playground-alb-415409693.us-east-1.elb.amazonaws.com"
+        
+        echo "Testing backend endpoint..."
+        curl -f $ALB_URL/api/health
+        
+        echo "Testing frontend endpoint..."
+        curl -f $ALB_URL/
+        
+    - name: 🗑️ Cleanup Blue Deployment
+      if: always()
+      run: |
+        # Scale down blue deployment
+        kubectl scale deployment backend --replicas=0 2>/dev/null || true
+        kubectl scale deployment frontend --replicas=0 2>/dev/null || true
+        
+        # Clean up test services
+        kubectl delete service backend-green-test frontend-green-test 2>/dev/null || true
+        
+        # Rename green to main
+        kubectl patch deployment backend-green -p '{"metadata":{"name":"backend"}}' 2>/dev/null || true
+        kubectl patch deployment frontend-green -p '{"metadata":{"name":"frontend"}}' 2>/dev/null || true
+
+  # Post-deployment Verification
+  post-deployment-verification:
+    name: ✅ Post-deployment Verification
+    runs-on: ubuntu-latest
+    needs: [blue-green-deployment]
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 🔍 Verify Deployment Status
+      run: |
+        echo "=== Deployment Status ==="
+        kubectl get deployments
+        kubectl get pods
+        kubectl get services
+        
+    - name: 🧪 Run Health Checks
+      run: |
+        ALB_URL="http://playground-alb-415409693.us-east-1.elb.amazonaws.com"
+        
+        echo "Testing backend health..."
+        for i in {1..5}; do
+          if curl -f $ALB_URL/api/health; then
+            echo "✅ Backend health check passed"
+            break
+          else
+            echo "⏳ Backend health check attempt $i failed, retrying..."
+            sleep 10
+          fi
+        done
+        
+        echo "Testing frontend..."
+        for i in {1..5}; do
+          if curl -f $ALB_URL/; then
+            echo "✅ Frontend check passed"
+            break
+          else
+            echo "⏳ Frontend check attempt $i failed, retrying..."
+            sleep 10
+          fi
+        done
+        
+    - name: 📊 Performance Check
+      run: |
+        ALB_URL="http://playground-alb-415409693.us-east-1.elb.amazonaws.com"
+        
+        echo "Testing response times..."
+        for i in {1..3}; do
+          RESPONSE_TIME=$(curl -o /dev/null -s -w '%{time_total}' $ALB_URL/api/health)
+          echo "Response time $i: ${RESPONSE_TIME}s"
+          
+          if (( $(echo "$RESPONSE_TIME > 2.0" | bc -l) )); then
+            echo "⚠️ Response time is slow: ${RESPONSE_TIME}s"
+          else
+            echo "✅ Response time is good: ${RESPONSE_TIME}s"
+          fi
+        done
+        
+    - name: 📧 Send Success Notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      if: success()
+
+  # Rollback on Failure
+  rollback:
+    name: 🔄 Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [blue-green-deployment]
+    if: failure()
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        
+    - name: 🔄 Rollback Deployment
+      run: |
+        echo "Rolling back to previous version..."
+        
+        # Rollback backend
+        kubectl rollout undo deployment/backend 2>/dev/null || true
+        
+        # Rollback frontend
+        kubectl rollout undo deployment/frontend 2>/dev/null || true
+        
+        # Wait for rollback to complete
+        kubectl rollout status deployment/backend --timeout=300s
+        kubectl rollout status deployment/frontend --timeout=300s
+        
+    - name: 🧪 Verify Rollback
+      run: |
+        ALB_URL="http://playground-alb-415409693.us-east-1.elb.amazonaws.com"
+        
+        echo "Verifying rollback..."
+        curl -f $ALB_URL/api/health || exit 1
+        curl -f $ALB_URL/ || exit 1
+        
+        echo "✅ Rollback successful"
+        
+    - name: 📧 Send Rollback Notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      if: always()

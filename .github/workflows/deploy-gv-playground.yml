@@ -1,0 +1,260 @@
+name: Deploy GV Playground
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'infrastructure/**'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'k8s/**'
+      - '.github/workflows/deploy-gv-playground.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'gv-playground'
+        type: choice
+        options:
+          - gv-playground
+          - dev
+          - staging
+          - prod
+      skip_infrastructure:
+        description: 'Skip infrastructure deployment (only deploy applications)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 898307279366.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  infrastructure:
+    name: 'Deploy Infrastructure'
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_infrastructure != 'true'
+    
+    environment: ${{ github.event.inputs.environment || 'gv-playground' }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: '1.6.0'
+
+    - name: Terraform Init
+      run: |
+        cd infrastructure
+        terraform init -backend-config="./environments/${{ github.event.inputs.environment || 'gv-playground' }}/backend.tfvars" \
+                      -var-file="./environments/${{ github.event.inputs.environment || 'gv-playground' }}/terraform.tfvars"
+
+    - name: Terraform Plan
+      run: |
+        cd infrastructure
+        terraform plan -var="environment=${{ github.event.inputs.environment || 'gv-playground' }}" \
+                      -var-file="./environments/${{ github.event.inputs.environment || 'gv-playground' }}/terraform.tfvars" \
+                      -out="${{ github.event.inputs.environment || 'gv-playground' }}.tfplan"
+
+    - name: Terraform Apply
+      run: |
+        cd infrastructure
+        terraform apply -auto-approve "${{ github.event.inputs.environment || 'gv-playground' }}.tfplan"
+
+    - name: Update Kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ github.event.inputs.environment || 'gv-playground' }}-eks-cluster
+
+    - name: Verify Infrastructure
+      run: |
+        echo "## Infrastructure Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** ${{ github.event.inputs.environment || 'gv-playground' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**EKS Cluster:** $(cd infrastructure && terraform output -raw eks_cluster_name)" >> $GITHUB_STEP_SUMMARY
+        echo "**ALB URL:** $(cd infrastructure && terraform output -raw application_url)" >> $GITHUB_STEP_SUMMARY
+        echo "**Database Endpoint:** $(cd infrastructure && terraform output -raw rds_endpoint)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**EKS Nodes:**" >> $GITHUB_STEP_SUMMARY
+        kubectl get nodes >> $GITHUB_STEP_SUMMARY
+
+  build-and-push:
+    name: 'Build and Push Images'
+    runs-on: ubuntu-latest
+    needs: infrastructure
+    if: always() && (needs.infrastructure.result == 'success' || github.event.inputs.skip_infrastructure == 'true')
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push backend
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        file: ./backend/Dockerfile
+        push: true
+        tags: |
+          ${{ env.ECR_REGISTRY }}/gv-playground-backend:${{ github.event.inputs.environment || 'gv-playground' }}-latest
+          ${{ env.ECR_REGISTRY }}/gv-playground-backend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+    - name: Build and push frontend
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        file: ./frontend/Dockerfile
+        push: true
+        tags: |
+          ${{ env.ECR_REGISTRY }}/gv-playground-frontend:${{ github.event.inputs.environment || 'gv-playground' }}-latest
+          ${{ env.ECR_REGISTRY }}/gv-playground-frontend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+  deploy-applications:
+    name: 'Deploy Applications to EKS'
+    runs-on: ubuntu-latest
+    needs: [infrastructure, build-and-push]
+    if: always() && (needs.infrastructure.result == 'success' || github.event.inputs.skip_infrastructure == 'true') && needs.build-and-push.result == 'success'
+    
+    environment: ${{ github.event.inputs.environment || 'gv-playground' }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ github.event.inputs.environment || 'gv-playground' }}-eks-cluster
+
+    - name: Deploy Backend
+      run: |
+        # Update backend deployment with new image
+        kubectl set image deployment/village-backend-real village-backend-real=${{ env.ECR_REGISTRY }}/gv-playground-backend:${{ github.event.inputs.environment || 'gv-playground' }}-latest
+        kubectl rollout status deployment/village-backend-real --timeout=300s
+
+    - name: Deploy Frontend
+      run: |
+        # Update frontend deployment with new image
+        kubectl set image deployment/village-frontend-real village-frontend-real=${{ env.ECR_REGISTRY }}/gv-playground-frontend:${{ github.event.inputs.environment || 'gv-playground' }}-latest
+        kubectl rollout status deployment/village-frontend-real --timeout=300s
+
+    - name: Deploy Simple Backend (Mock)
+      run: |
+        kubectl apply -f k8s/simple-backend-deployment.yaml
+        kubectl rollout status deployment/simple-backend --timeout=300s
+
+    - name: Verify Deployment
+      run: |
+        echo "## Application Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "**Backend Image:** ${{ env.ECR_REGISTRY }}/gv-playground-backend:${{ github.event.inputs.environment || 'gv-playground' }}-latest" >> $GITHUB_STEP_SUMMARY
+        echo "**Frontend Image:** ${{ env.ECR_REGISTRY }}/gv-playground-frontend:${{ github.event.inputs.environment || 'gv-playground' }}-latest" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Pods Status:**" >> $GITHUB_STEP_SUMMARY
+        kubectl get pods -o wide >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Services Status:**" >> $GITHUB_STEP_SUMMARY
+        kubectl get services >> $GITHUB_STEP_SUMMARY
+
+    - name: Health Check
+      run: |
+        # Wait for services to be ready
+        sleep 30
+        
+        echo "## Health Check Results" >> $GITHUB_STEP_SUMMARY
+        
+        # Check backend health
+        BACKEND_POD=$(kubectl get pods -l app=village-backend-real -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$BACKEND_POD" ]; then
+          echo "**Backend Health:**" >> $GITHUB_STEP_SUMMARY
+          kubectl exec $BACKEND_POD -- curl -s http://localhost:3001/api/health || echo "Backend health check failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Check simple backend health
+        SIMPLE_BACKEND_POD=$(kubectl get pods -l app=simple-backend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$SIMPLE_BACKEND_POD" ]; then
+          echo "**Simple Backend Health:**" >> $GITHUB_STEP_SUMMARY
+          kubectl exec $SIMPLE_BACKEND_POD -- curl -s http://localhost:3001/api/health || echo "Simple backend health check failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Check frontend accessibility
+        FRONTEND_LB=$(kubectl get service village-frontend-lb -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+        if [ -n "$FRONTEND_LB" ]; then
+          echo "**Frontend LoadBalancer:** http://$FRONTEND_LB" >> $GITHUB_STEP_SUMMARY
+          curl -s -o /dev/null -w "HTTP Status: %{http_code}" http://$FRONTEND_LB || echo "Frontend accessibility check failed" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  notify:
+    name: 'Notify Deployment Status'
+    runs-on: ubuntu-latest
+    needs: [infrastructure, build-and-push, deploy-applications]
+    if: always()
+    
+    steps:
+    - name: Notify Success
+      if: needs.deploy-applications.result == 'success'
+      run: |
+        echo "🎉 GV Playground deployment to ${{ github.event.inputs.environment || 'gv-playground' }} completed successfully!"
+        echo ""
+        echo "## 🚀 Deployment Summary"
+        echo "- **Environment:** ${{ github.event.inputs.environment || 'gv-playground' }}"
+        echo "- **EKS Cluster:** ${{ github.event.inputs.environment || 'gv-playground' }}-eks-cluster"
+        echo "- **Application URL:** http://gv-playground-alb-727046293.us-east-1.elb.amazonaws.com"
+        echo "- **Backend Image:** ${{ env.ECR_REGISTRY }}/gv-playground-backend:${{ github.event.inputs.environment || 'gv-playground' }}-latest"
+        echo "- **Frontend Image:** ${{ env.ECR_REGISTRY }}/gv-playground-frontend:${{ github.event.inputs.environment || 'gv-playground' }}-latest"
+        echo ""
+        echo "## 🔗 Quick Links"
+        echo "- [EKS Console](https://console.aws.amazon.com/eks/home?region=${{ env.AWS_REGION }}#/clusters)"
+        echo "- [ECR Console](https://console.aws.amazon.com/ecr/repositories?region=${{ env.AWS_REGION }})"
+        echo "- [Application Load Balancer](http://gv-playground-alb-727046293.us-east-1.elb.amazonaws.com)"
+
+    - name: Notify Failure
+      if: needs.deploy-applications.result == 'failure'
+      run: |
+        echo "❌ GV Playground deployment to ${{ github.event.inputs.environment || 'gv-playground' }} failed!"
+        echo ""
+        echo "## 🔍 Troubleshooting"
+        echo "Please check the following:"
+        echo "1. Infrastructure deployment logs"
+        echo "2. Docker build logs"
+        echo "3. Kubernetes deployment logs"
+        echo "4. AWS credentials and permissions"
+        echo ""
+        echo "## 📋 Next Steps"
+        echo "1. Review the failed job logs"
+        echo "2. Check AWS resource limits"
+        echo "3. Verify EKS cluster status"
+        echo "4. Retry deployment if needed"

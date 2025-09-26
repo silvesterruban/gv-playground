@@ -1,0 +1,64 @@
+GV Playground Health Report - Wed Sep 24 19:03:18 IST 2025
+======================================
+
+Cluster Info:
+Kubernetes control plane is running at https://42BEE31ADADDD206A50161D19636BB8D.gr7.us-east-1.eks.amazonaws.com
+CoreDNS is running at https://42BEE31ADADDD206A50161D19636BB8D.gr7.us-east-1.eks.amazonaws.com/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+
+Node Status:
+NAME                          STATUS   ROLES    AGE   VERSION
+ip-10-0-10-108.ec2.internal   Ready    <none>   13d   v1.28.15-eks-3abbec1
+ip-10-0-11-6.ec2.internal     Ready    <none>   13d   v1.28.15-eks-3abbec1
+
+Pod Status:
+NAME                                       READY   STATUS             RESTARTS       AGE
+lb-test-app-6dc4fcf768-5k8dc               1/1     Running            0              13d
+lb-test-app-6dc4fcf768-vxxjr               1/1     Running            0              13d
+nginx-test-7fb874999-5ldfq                 1/1     Running            0              13d
+nginx-test-7fb874999-b4lxj                 1/1     Running            0              13d
+simple-backend-6c4d5f58dd-9nbg2            1/1     Running            0              4h21m
+simple-backend-6c4d5f58dd-ps6rs            1/1     Running            0              4h21m
+simple-monitoring-76ccb776fb-rnqbk         1/1     Running            0              49m
+simple-test-app-7b48f47dd8-tmj8d           1/1     Running            0              13d
+simple-test-app-7b48f47dd8-x6ctl           1/1     Running            0              13d
+test-app-75f698d4d-88bgn                   1/1     Running            0              13d
+test-backend-6cc7c97567-kbx7j              1/1     Running            0              12d
+village-backend-real-564894f747-6wndt      1/1     Running            0              2d20h
+village-backend-real-564894f747-srcbb      1/1     Running            0              2d20h
+village-backend-real-7f5c66cb4-xj2l7       0/1     Running            4 (36s ago)    3m56s
+village-backend-working-6599f8cf4f-59kgr   1/1     Running            0              12d
+village-backend-working-6599f8cf4f-62kvq   1/1     Running            0              12d
+village-frontend-real-795d44686d-rrqfx     1/1     Running            0              9d
+village-frontend-real-795d44686d-sjvqw     1/1     Running            0              9d
+village-frontend-real-7d8c9cd7d7-2zsl8     0/1     CrashLoopBackOff   7 (105s ago)   16m
+village-frontend-working-d8cb574cc-5t8pz   1/1     Running            0              12d
+village-frontend-working-d8cb574cc-phdd4   1/1     Running            0              12d
+
+Service Status:
+NAME                               TYPE           CLUSTER-IP       EXTERNAL-IP                                                                     PORT(S)        AGE
+kubernetes                         ClusterIP      172.20.0.1       <none>                                                                          443/TCP        13d
+lb-test-service                    LoadBalancer   172.20.181.6     a59f9adbe04e349849f0332f10b75242-10faf1a4af53e9b1.elb.us-east-1.amazonaws.com   80:32291/TCP   13d
+monitoring-dashboard-lb            LoadBalancer   172.20.52.126    a83762c1bdc104ed7bc0343002f207fa-1395116084.us-east-1.elb.amazonaws.com         80:32046/TCP   58m
+monitoring-dashboard-service       ClusterIP      172.20.110.67    <none>                                                                          80/TCP         58m
+nginx-test-service                 ClusterIP      172.20.201.101   <none>                                                                          80/TCP         13d
+simple-backend-service             ClusterIP      172.20.87.166    <none>                                                                          3001/TCP       2d10h
+simple-monitoring-lb               LoadBalancer   172.20.7.128     a3fcc5e80b9ec466e82938742860982a-202655255.us-east-1.elb.amazonaws.com          80:30826/TCP   49m
+simple-monitoring-service          ClusterIP      172.20.235.140   <none>                                                                          80/TCP         49m
+simple-test-service                NodePort       172.20.91.167    <none>                                                                          80:30080/TCP   13d
+test-app-service                   ClusterIP      172.20.43.210    <none>                                                                          80/TCP         13d
+test-backend-service               ClusterIP      172.20.83.42     <none>                                                                          80/TCP         12d
+village-backend-real-service       ClusterIP      172.20.141.90    <none>                                                                          3001/TCP       11d
+village-backend-service            ClusterIP      172.20.132.160   <none>                                                                          3001/TCP       13d
+village-backend-working-service    ClusterIP      172.20.9.103     <none>                                                                          80/TCP         12d
+village-frontend-lb                LoadBalancer   172.20.249.172   a8d7fcfccaefd41ad87f7b1dea9972cd-1965868274.us-east-1.elb.amazonaws.com         80:31570/TCP   53m
+village-frontend-real-service      ClusterIP      172.20.217.100   <none>                                                                          80/TCP         11d
+village-frontend-service           ClusterIP      172.20.195.216   <none>                                                                          80/TCP         13d
+village-frontend-working-service   ClusterIP      172.20.71.87     <none>                                                                          80/TCP         12d
+village-platform-lb                LoadBalancer   172.20.201.110   a21210fbf64f44579b93892e6546f23c-1740532496.us-east-1.elb.amazonaws.com         80:31823/TCP   11d
+village-platform-real-lb           LoadBalancer   172.20.133.14    ab9ac44450ba743de85a352855fe425c-67dab697d8ecac9b.elb.us-east-1.amazonaws.com   80:32533/TCP   11d
+
+Resource Usage:
+Resource metrics not available
+Resource metrics not available

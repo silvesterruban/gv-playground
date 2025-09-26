@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: village-frontend-lb
+  namespace: default
+  labels:
+    app: village-frontend-real
+spec:
+  selector:
+    app: village-frontend-real
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  type: LoadBalancer

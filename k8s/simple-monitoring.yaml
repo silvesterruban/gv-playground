@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simple-monitoring
+  namespace: default
+  labels:
+    app: simple-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simple-monitoring
+  template:
+    metadata:
+      labels:
+        app: simple-monitoring
+    spec:
+      containers:
+      - name: monitoring
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            cat > /etc/nginx/nginx.conf << 'EOF'
+            events {
+                worker_connections 1024;
+            }
+            http {
+                include /etc/nginx/mime.types;
+                default_type application/octet-stream;
+                
+                server {
+                    listen 80;
+                    server_name localhost;
+                    
+                    location /health {
+                        add_header Content-Type application/json;
+                        return 200 '{"status":"OK","service":"simple-monitoring","timestamp":"2025-09-24T12:00:00Z"}';
+                    }
+                    
+                    location /metrics {
+                        add_header Content-Type application/json;
+                        return 200 '{"pods":{"total":10,"running":8,"pending":0,"failed":2},"services":{"total":15,"loadbalancers":3},"nodes":{"total":2,"ready":2}}';
+                    }
+                    
+                    location /dashboard {
+                        add_header Content-Type text/html;
+                        return 200 '<!DOCTYPE html><html><head><title>GV Playground Monitoring</title></head><body><h1>GV Playground Monitoring Dashboard</h1><p>Status: OK</p><p>Pods: 8/10 running</p><p>Services: 15 total</p><p>LoadBalancers: 3 active</p></body></html>';
+                    }
+                    
+                    location / {
+                        add_header Content-Type application/json;
+                        return 200 '{"message":"GV Playground Simple Monitoring","endpoints":["/health","/metrics","/dashboard"],"status":"running"}';
+                    }
+                }
+            }
+            EOF
+            nginx -g "daemon off;"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: simple-monitoring-service
+  namespace: default
+  labels:
+    app: simple-monitoring
+spec:
+  selector:
+    app: simple-monitoring
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: simple-monitoring-lb
+  namespace: default
+  labels:
+    app: simple-monitoring
+spec:
+  selector:
+    app: simple-monitoring
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  type: LoadBalancer

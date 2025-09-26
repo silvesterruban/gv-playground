@@ -1,0 +1,3 @@
+NODE_ENV=dev1
+PORT=3001
+DATABASE_URL=postgresql://gradvillage_admin:GradVillagedev12025!@gradvillage-dev1-db.c69qc6wichwr.us-east-1.rds.amazonaws.com:5432/village_db?schema=public 

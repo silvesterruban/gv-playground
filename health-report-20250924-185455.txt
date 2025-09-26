@@ -1,0 +1,16 @@
+GV Playground Health Report - Wed Sep 24 18:54:55 IST 2025
+======================================
+
+Cluster Info:
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+
+Node Status:
+
+Pod Status:
+
+Service Status:
+
+Resource Usage:
+Resource metrics not available
+Resource metrics not available

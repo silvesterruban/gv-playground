@@ -1,0 +1,13 @@
+{
+  "name": "simple-backend",
+  "version": "1.0.0",
+  "description": "Simple backend for testing GV Playground frontend",
+  "main": "simple-backend.js",
+  "scripts": {
+    "start": "node simple-backend.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}

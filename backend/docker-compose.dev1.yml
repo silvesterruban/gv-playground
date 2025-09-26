@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Backend API (Dev1 Environment for AWS)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev1
+    container_name: gradvillage-backend-dev1
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=dev1
+      - PORT=3001
+      # AWS Credentials (for Docker container)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+      # Database Configuration for Dev1 RDS
+      - DATABASE_URL=postgresql://gradvillage_admin:GradVillagedev12025!@gradvillage-dev1-db.c69qc6wichwr.us-east-1.rds.amazonaws.com:5432/village_db?schema=public
+      # AWS Configuration
+      - AWS_REGION=us-east-1
+      - AWS_BUCKET_NAME=gradvillage-dev1-storage
+      - USE_MOTO=false
+      - MOTO_ENDPOINT=
+      # JWT Configuration
+      - JWT_SECRET=your-super-secret-jwt-key-for-dev1
+      - JWT_REFRESH_SECRET=your-super-secret-refresh-key-for-dev1
+      # Email Configuration (SES)
+      - SES_REGION=us-east-1
+      - SES_FROM_EMAIL=noreply@gradvillage.com
+      # Application Configuration
+      - APP_NAME=GradVillage
+      - APP_URL=https://dev1.gradvillage.com
+      - FRONTEND_URL=https://dev1.gradvillage.com
+      # Dev1 Settings
+      - LOG_LEVEL=info
+      - ENABLE_CORS=true
+      - RATE_LIMIT_ENABLED=true
+    volumes:
+      # Mount AWS credentials from host
+      - ~/.aws:/root/.aws:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gradvillage-network
+
+networks:
+  gradvillage-network:
+    driver: bridge 

@@ -1,0 +1,361 @@
+name: 🏗️ Terraform Infrastructure Management
+
+on:
+  push:
+    paths:
+      - 'infrastructure/**'
+    branches: [ main, develop ]
+  pull_request:
+    paths:
+      - 'infrastructure/**'
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+        - plan
+        - apply
+        - destroy
+      environment:
+        description: 'Environment to target'
+        required: true
+        default: 'playground'
+        type: choice
+        options:
+        - playground
+        - staging
+        - production
+      auto_approve:
+        description: 'Auto-approve apply/destroy (use with caution)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  TF_VAR_environment: ${{ inputs.environment || 'playground' }}
+
+jobs:
+  # Terraform Plan
+  terraform-plan:
+    name: 📋 Terraform Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || inputs.action == 'plan'
+    defaults:
+      run:
+        working-directory: ./infrastructure
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+        
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🏗️ Terraform Init
+      run: terraform init
+      
+    - name: 🔍 Terraform Validate
+      run: terraform validate
+      
+    - name: 🔍 Terraform Format Check
+      run: terraform fmt -check -recursive
+      
+    - name: 📋 Terraform Plan
+      id: plan
+      run: |
+        terraform plan -var-file="terraform.tfvars" -out=tfplan
+        terraform show -no-color tfplan > tfplan.txt
+        
+    - name: 📤 Upload Plan Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-plan-${{ env.TF_VAR_environment }}
+        path: infrastructure/tfplan.txt
+        
+    - name: 💬 Comment PR with Plan
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const plan = fs.readFileSync('infrastructure/tfplan.txt', 'utf8');
+          
+          const output = `## 🏗️ Terraform Plan for ${{ env.TF_VAR_environment }}
+          
+          <details>
+          <summary>📋 Click to view the plan</summary>
+          
+          \`\`\`hcl
+          ${plan}
+          \`\`\`
+          
+          </details>
+          
+          **Environment**: ${{ env.TF_VAR_environment }}
+          **Region**: ${{ env.AWS_REGION }}
+          **Action**: Plan
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
+
+  # Terraform Apply
+  terraform-apply:
+    name: 🚀 Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [terraform-plan]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.action == 'apply'
+    environment: ${{ env.TF_VAR_environment }}
+    defaults:
+      run:
+        working-directory: ./infrastructure
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+        
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🏗️ Terraform Init
+      run: terraform init
+      
+    - name: 📥 Download Plan Artifact
+      if: github.event_name == 'push'
+      uses: actions/download-artifact@v3
+      with:
+        name: terraform-plan-${{ env.TF_VAR_environment }}
+        path: infrastructure/
+        
+    - name: 🚀 Terraform Apply
+      run: |
+        if [ -f "tfplan" ]; then
+          terraform apply tfplan
+        else
+          terraform apply -var-file="terraform.tfvars" -auto-approve
+        fi
+        
+    - name: 📊 Get Terraform Outputs
+      id: outputs
+      run: |
+        terraform output -json > outputs.json
+        echo "outputs<<EOF" >> $GITHUB_OUTPUT
+        cat outputs.json >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+    - name: 🧪 Run Infrastructure Tests
+      run: |
+        chmod +x ../test-app/test-infrastructure.sh
+        ../test-app/test-infrastructure.sh
+        
+    - name: 📧 Send Success Notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#infrastructure'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      if: success()
+
+  # Terraform Destroy
+  terraform-destroy:
+    name: 🗑️ Terraform Destroy
+    runs-on: ubuntu-latest
+    if: inputs.action == 'destroy'
+    environment: ${{ env.TF_VAR_environment }}-destroy
+    defaults:
+      run:
+        working-directory: ./infrastructure
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+        
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🏗️ Terraform Init
+      run: terraform init
+      
+    - name: 🗑️ Terraform Destroy
+      run: |
+        if [ "${{ inputs.auto_approve }}" = "true" ]; then
+          terraform destroy -var-file="terraform.tfvars" -auto-approve
+        else
+          terraform destroy -var-file="terraform.tfvars"
+        fi
+        
+    - name: 📧 Send Destroy Notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "text": "🗑️ Infrastructure Destroyed",
+            "attachments": [
+              {
+                "color": "warning",
+                "fields": [
+                  {
+                    "title": "Environment",
+                    "value": "${{ env.TF_VAR_environment }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Region",
+                    "value": "${{ env.AWS_REGION }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Triggered by",
+                    "value": "${{ github.actor }}",
+                    "short": true
+                  }
+                ]
+              }
+            ]
+          }
+        channel: '#infrastructure'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      if: always()
+
+  # Security Scan
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: ./infrastructure
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔍 Run Checkov Security Scan
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: infrastructure/
+        framework: terraform
+        output_format: sarif
+        output_file_path: checkov-results.sarif
+        
+    - name: 📤 Upload Security Scan Results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: infrastructure/checkov-results.sarif
+
+  # Cost Estimation
+  cost-estimation:
+    name: 💰 Cost Estimation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: ./infrastructure
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+        
+    - name: 🔧 Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🏗️ Terraform Init
+      run: terraform init
+      
+    - name: 📋 Terraform Plan
+      run: terraform plan -var-file="terraform.tfvars" -out=tfplan
+      
+    - name: 💰 Generate Cost Estimation
+      run: |
+        # Install infracost
+        curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
+        
+        # Generate cost estimation
+        ./infracost breakdown --path=tfplan --format=json --out-file=cost-estimate.json
+        
+        # Generate markdown report
+        ./infracost breakdown --path=tfplan --format=table > cost-estimate.txt
+        
+    - name: 📤 Upload Cost Estimation
+      uses: actions/upload-artifact@v3
+      with:
+        name: cost-estimation-${{ env.TF_VAR_environment }}
+        path: |
+          infrastructure/cost-estimate.json
+          infrastructure/cost-estimate.txt
+          
+    - name: 💬 Comment PR with Cost Estimation
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const costEstimate = fs.readFileSync('infrastructure/cost-estimate.txt', 'utf8');
+          
+          const output = `## 💰 Cost Estimation for ${{ env.TF_VAR_environment }}
+          
+          <details>
+          <summary>💰 Click to view cost breakdown</summary>
+          
+          \`\`\`
+          ${costEstimate}
+          \`\`\`
+          
+          </details>
+          
+          **Environment**: ${{ env.TF_VAR_environment }}
+          **Region**: ${{ env.AWS_REGION }}
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });

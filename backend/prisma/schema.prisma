@@ -1,0 +1,550 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Student {
+  id                 String              @id @default(uuid())
+  email              String              @unique
+  passwordHash       String              @map("password_hash")
+  firstName          String              @map("first_name")
+  lastName           String              @map("last_name")
+  schoolName         String              @map("school")
+  major              String?
+  bio                String?
+  profilePhoto       String?             @map("profile_photo")
+  registrationStatus String              @default("pending") @map("registration_status")
+  registrationPaid   Boolean             @default(false) @map("registration_paid")
+  fundingGoal        Decimal             @default(0) @map("funding_goal")
+  amountRaised       Decimal             @default(0) @map("amount_raised")
+  totalDonations     Int                 @default(0) @map("total_donations")
+  donationGoal       Decimal?            @map("donation_goal")
+  profileUrl         String              @unique @map("profile_url")
+  isActive           Boolean             @default(true) @map("is_active")
+  graduationYear     String?             @map("graduation_year")
+  location           String?
+  urgency            String              @default("medium")
+  tags               String[]
+  verified           Boolean             @default(false)
+  lastActive         DateTime            @default(now()) @map("last_active")
+  publicProfile      Boolean             @default(true) @map("public_profile")
+  allowMessages      Boolean             @default(true) @map("allow_messages")
+  showDonorNames     Boolean             @default(true) @map("show_donor_names")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  schoolRelationId   String?
+  schoolVerified     Boolean             @default(false) @map("school_verified")
+  studentIdVerified  Boolean             @default(false) @map("student_id_verified")
+  userId             String              @unique
+  welcomeBoxStatus   String              @default("pending")
+  gpa                Decimal?
+  achievements       String?
+  financialNeed      String?             @map("financial_need")
+  phoneNumber        String?             @map("phone_number")
+  linkedinUrl        String?             @map("linkedin_url")
+  personalStatement  String?             @map("personal_statement")
+  rejectedAt         DateTime?           @map("rejected_at")
+  rejectedBy         String?             @map("rejected_by")
+  rejectionReason    String?             @map("rejection_reason")
+  verifiedAt         DateTime?           @map("verified_at")
+  verifiedBy         String?             @map("verified_by")
+  paymentComplete    Boolean             @default(false)
+  paymentCompletedAt DateTime?
+  paymentIntentId    String?
+  paymentStatus      String?             @default("pending")
+  registrationFee    Float?              @default(25.00)
+  schoolVerification SchoolVerification?
+  welcomeBox         WelcomeBox?
+  campaigns          DonationCampaign[]
+  donations          Donation[]
+  registrationFees   RegistrationFee[]
+  bookmarks          DonorBookmark[]
+  messages           Message[]
+  recurringDonations RecurringDonation[]
+  registries         Registry[]
+  updates            StudentUpdate[]
+  rejector           Admin?              @relation("StudentRejector", fields: [rejectedBy], references: [id])
+  schoolRelation     School?             @relation("SchoolToStudent", fields: [schoolRelationId], references: [id])
+  verifier           Admin?              @relation("StudentVerifier", fields: [verifiedBy], references: [id])
+
+  @@index([schoolRelationId])
+  @@index([major])
+  @@index([location])
+  @@index([graduationYear])
+  @@index([urgency])
+  @@index([verified])
+  @@index([lastActive])
+  @@index([publicProfile])
+  @@map("students")
+}
+
+model Donor {
+  id                 String              @id @default(uuid())
+  email              String              @unique
+  passwordHash       String              @map("password_hash")
+  firstName          String              @map("first_name")
+  lastName           String              @map("last_name")
+  phone              String?
+  address            Json?
+  preferences        Json?
+  verified           Boolean             @default(false)
+  isActive           Boolean             @default(true) @map("is_active")
+  memberSince        DateTime            @default(now()) @map("member_since")
+  lastLogin          DateTime?           @map("last_login")
+  totalDonated       Decimal             @default(0) @map("total_donated")
+  studentsSupported  Int                 @default(0) @map("students_supported")
+  impactScore        Float               @default(0) @map("impact_score")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  donations          Donation[]
+  bookmarks          DonorBookmark[]
+  notifications      DonorNotification[]
+  reports            DonorReport[]
+  messages           Message[]
+  recurringDonations RecurringDonation[]
+
+  @@index([email])
+  @@index([verified])
+  @@index([totalDonated])
+  @@index([memberSince])
+  @@map("donors")
+}
+
+model DonorBookmark {
+  id           String   @id @default(uuid())
+  donorId      String   @map("donor_id")
+  studentId    String   @map("student_id")
+  bookmarkedAt DateTime @default(now()) @map("bookmarked_at")
+  notes        String?
+  donor        Donor    @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([donorId, studentId])
+  @@index([donorId])
+  @@index([studentId])
+  @@map("donor_bookmarks")
+}
+
+model RecurringDonation {
+  id              String    @id @default(uuid())
+  donorId         String    @map("donor_id")
+  studentId       String    @map("student_id")
+  amount          Decimal
+  frequency       String
+  paymentMethodId String    @map("payment_method_id")
+  active          Boolean   @default(true)
+  nextPaymentDate DateTime  @map("next_payment_date")
+  lastPaymentDate DateTime? @map("last_payment_date")
+  totalDonated    Decimal   @default(0) @map("total_donated")
+  paymentCount    Int       @default(0) @map("payment_count")
+  subscriptionId  String?   @map("subscription_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  cancelledAt     DateTime? @map("cancelled_at")
+  donor           Donor     @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([donorId])
+  @@index([studentId])
+  @@index([active])
+  @@index([nextPaymentDate])
+  @@map("recurring_donations")
+}
+
+model Message {
+  id        String    @id @default(uuid())
+  donorId   String    @map("donor_id")
+  studentId String    @map("student_id")
+  subject   String
+  content   String
+  read      Boolean   @default(false)
+  archived  Boolean   @default(false)
+  flagged   Boolean   @default(false)
+  replyToId String?   @map("reply_to_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+  readAt    DateTime? @map("read_at")
+  donor     Donor     @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  replyTo   Message?  @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies   Message[] @relation("MessageReplies")
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([donorId])
+  @@index([studentId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model DonorNotification {
+  id          String    @id @default(uuid())
+  donorId     String    @map("donor_id")
+  type        String
+  title       String
+  message     String
+  studentId   String?   @map("student_id")
+  donationId  String?   @map("donation_id")
+  data        Json?
+  read        Boolean   @default(false)
+  archived    Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  readAt      DateTime? @map("read_at")
+  is_archived Boolean   @default(false) @map("is_archived")
+  donor       Donor     @relation(fields: [donorId], references: [id], onDelete: Cascade)
+
+  @@index([donorId])
+  @@index([type])
+  @@index([read])
+  @@index([createdAt])
+  @@map("donor_notifications")
+}
+
+model StudentUpdate {
+  id         String   @id @default(uuid())
+  studentId  String   @map("student_id")
+  title      String
+  content    String
+  imageUrl   String?  @map("image_url")
+  updateType String   @default("general") @map("update_type")
+  published  Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([published])
+  @@index([createdAt])
+  @@map("student_updates")
+}
+
+model DonorReport {
+  id          String    @id @default(uuid())
+  donorId     String    @map("donor_id")
+  studentId   String    @map("student_id")
+  reason      String
+  description String
+  evidence    String[]
+  status      String    @default("pending")
+  reviewedBy  String?   @map("reviewed_by")
+  reviewedAt  DateTime? @map("reviewed_at")
+  resolution  String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  donor       Donor     @relation(fields: [donorId], references: [id], onDelete: Cascade)
+
+  @@index([donorId])
+  @@index([studentId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("donor_reports")
+}
+
+model Donation {
+  id                  String              @id @default(uuid())
+  studentId           String              @map("student_id")
+  donorId             String?             @map("donor_id")
+  recurringDonationId String?             @map("recurring_donation_id")
+  taxReceiptNumber    String?             @unique @map("tax_receipt_number")
+  donorFirstName      String?             @map("donor_first_name")
+  donorLastName       String?             @map("donor_last_name")
+  donorEmail          String              @map("donor_email")
+  donorPhone          String?             @map("donor_phone")
+  donorAddress        Json?               @map("donor_address")
+  amount              Decimal
+  currency            String              @default("USD")
+  donationType        String              @default("general") @map("donation_type")
+  targetRegistryId    String?             @map("target_registry_id")
+  paymentMethod       String              @map("payment_method")
+  paymentIntentId     String?             @map("payment_intent_id")
+  paypalOrderId       String?             @map("paypal_order_id")
+  transactionFee      Decimal             @map("transaction_fee")
+  netAmount           Decimal             @map("net_amount")
+  taxReceiptIssued    Boolean             @default(false) @map("tax_receipt_issued")
+  nonprofitId         String              @default("gradvillage-501c3") @map("nonprofit_id")
+  ein                 String              @default("XX-XXXXXXX") @map("ein")
+  isRecurring         Boolean             @default(false) @map("is_recurring")
+  recurringFrequency  String?             @map("recurring_frequency")
+  subscriptionId      String?             @map("subscription_id")
+  isAnonymous         Boolean             @default(false) @map("is_anonymous")
+  donorMessage        String?             @map("donor_message")
+  allowPublicDisplay  Boolean             @default(true) @map("allow_public_display")
+  allowStudentContact Boolean             @default(false) @map("allow_student_contact")
+  status              String              @default("pending")
+  failureReason       String?             @map("failure_reason")
+  refundReason        String?             @map("refund_reason")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  processedAt         DateTime?           @map("processed_at")
+  refundedAt          DateTime?           @map("refunded_at")
+  isPublicDonation    Boolean             @default(false) @map("is_public_donation")
+  donationItems       DonationItem[]
+  donor               Donor?              @relation(fields: [donorId], references: [id])
+  student             Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  targetRegistry      Registry?           @relation(fields: [targetRegistryId], references: [id])
+  paymentTransaction  PaymentTransaction?
+  taxReceipt          TaxReceipt?
+
+  @@index([studentId])
+  @@index([donorId])
+  @@index([donorEmail])
+  @@index([status])
+  @@index([createdAt])
+  @@index([taxReceiptNumber])
+  @@index([isRecurring])
+  @@index([donationType])
+  @@map("donations")
+}
+
+model RegistrationFee {
+  id                  String              @id @default(uuid())
+  studentId           String              @map("student_id")
+  receiptNumber       String?             @unique @map("receipt_number")
+  studentFirstName    String              @map("student_first_name")
+  studentLastName     String              @map("student_last_name")
+  studentEmail        String              @map("student_email")
+  studentSchool       String              @map("student_school")
+  studentMajor        String              @map("student_major")
+  amount              Decimal
+  currency            String              @default("USD")
+  paymentMethod       String              @map("payment_method")
+  paymentIntentId     String?             @map("payment_intent_id")
+  transactionFee      Decimal             @map("transaction_fee")
+  netAmount           Decimal             @map("net_amount")
+  status              String              @default("pending")
+  failureReason       String?             @map("failure_reason")
+  refundReason        String?             @map("refund_reason")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  processedAt         DateTime?           @map("processed_at")
+  refundedAt          DateTime?           @map("refunded_at")
+  student             Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  paymentTransaction  PaymentTransaction?
+
+  @@index([studentId])
+  @@index([studentEmail])
+  @@index([status])
+  @@index([createdAt])
+  @@index([receiptNumber])
+  @@map("registration_fees")
+}
+
+model Registry {
+  id                  String         @id @default(uuid())
+  studentId           String         @map("student_id")
+  itemName            String         @map("item_name")
+  itemDescription     String?        @map("item_description")
+  itemLink            String?        @map("item_link")
+  price               Decimal
+  category            String
+  priority            String         @default("medium")
+  fundedStatus        String         @default("needed") @map("funded_status")
+  amountFunded        Decimal        @default(0) @map("amount_funded")
+  donationGoal        Decimal?       @map("donation_goal")
+  fundingDeadline     DateTime?      @map("funding_deadline")
+  allowPartialFunding Boolean        @default(true) @map("allow_partial_funding")
+  imageUrl            String?        @map("image_url")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+  donationItems       DonationItem[]
+  donations           Donation[]
+  student             Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("registries")
+}
+
+model PaymentTransaction {
+  id                    String            @id @default(uuid())
+  donationId            String?           @unique @map("donation_id")
+  registrationFeeId     String?           @unique @map("registration_fee_id")
+  provider              String
+  providerTransactionId String            @map("provider_transaction_id")
+  providerFee           Decimal           @map("provider_fee")
+  providerFeeCurrency   String            @default("USD") @map("provider_fee_currency")
+  grossAmount           Decimal           @map("gross_amount")
+  netAmount             Decimal           @map("net_amount")
+  currency              String            @default("USD")
+  exchangeRate          Decimal?          @map("exchange_rate")
+  merchantAccountId     String            @map("merchant_account_id")
+  settlementBatchId     String?           @map("settlement_batch_id")
+  riskScore             Float?            @map("risk_score")
+  fraudStatus           String?           @map("fraud_status")
+  complianceChecked     Boolean           @default(false) @map("compliance_checked")
+  gatewayResponse       Json?             @map("gateway_response")
+  ipAddress             String?           @map("ip_address")
+  userAgent             String?           @map("user_agent")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  settledAt             DateTime?         @map("settled_at")
+  donation              Donation?         @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  registrationFee       RegistrationFee?  @relation(fields: [registrationFeeId], references: [id], onDelete: Cascade)
+
+  @@index([provider])
+  @@index([providerTransactionId])
+  @@index([createdAt])
+  @@map("payment_transactions")
+}
+
+model TaxReceipt {
+  id                  String    @id @default(uuid())
+  donationId          String    @unique @map("donation_id")
+  receiptNumber       String    @unique @map("receipt_number")
+  receiptDate         DateTime  @map("receipt_date")
+  taxYear             Int       @map("tax_year")
+  nonprofitName       String    @default("GradVillage") @map("nonprofit_name")
+  nonprofitEin        String    @default("XX-XXXXXXX") @map("nonprofit_ein")
+  nonprofitAddress    Json      @map("nonprofit_address")
+  donorName           String    @map("donor_name")
+  donorAddress        Json      @map("donor_address")
+  donationAmount      Decimal   @map("donation_amount")
+  donationDate        DateTime  @map("donation_date")
+  donationDescription String    @map("donation_description")
+  issued              Boolean   @default(false)
+  issuedAt            DateTime? @map("issued_at")
+  emailSentAt         DateTime? @map("email_sent_at")
+  receiptPdfUrl       String?   @map("receipt_pdf_url")
+  receiptHtml         String?   @map("receipt_html")
+  generatedBy         String?   @map("generated_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  donation            Donation  @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  admin               Admin?    @relation(fields: [generatedBy], references: [id])
+
+  @@index([receiptNumber])
+  @@index([taxYear])
+  @@index([receiptDate])
+  @@map("tax_receipts")
+}
+
+model DonationCampaign {
+  id                String    @id @default(uuid())
+  studentId         String?   @map("student_id")
+  title             String
+  description       String
+  goalAmount        Decimal   @map("goal_amount")
+  raisedAmount      Decimal   @default(0) @map("raised_amount")
+  isActive          Boolean   @default(true) @map("is_active")
+  isPublic          Boolean   @default(true) @map("is_public")
+  allowAnonymous    Boolean   @default(true) @map("allow_anonymous")
+  startDate         DateTime? @map("start_date")
+  endDate           DateTime? @map("end_date")
+  nonprofitApproved Boolean   @default(false) @map("nonprofit_approved")
+  approvedBy        String?   @map("approved_by")
+  approvedAt        DateTime? @map("approved_at")
+  campaignType      String    @default("individual") @map("campaign_type")
+  tags              String[]
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  approver          Admin?    @relation(fields: [approvedBy], references: [id])
+  student           Student?  @relation(fields: [studentId], references: [id])
+
+  @@index([studentId])
+  @@index([isActive])
+  @@index([nonprofitApproved])
+  @@map("donation_campaigns")
+}
+
+model DonationItem {
+  id              String   @id @default(uuid())
+  donationId      String   @map("donation_id")
+  registryId      String   @map("registry_id")
+  amountAllocated Decimal  @map("amount_allocated")
+  createdAt       DateTime @default(now()) @map("created_at")
+  donation        Donation @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  registry        Registry @relation(fields: [registryId], references: [id], onDelete: Cascade)
+
+  @@index([donationId])
+  @@index([registryId])
+  @@map("donation_items")
+}
+
+model WelcomeBox {
+  id              String   @id @default(uuid())
+  studentId       String   @unique
+  status          String   @default("pending")
+  trackingNumber  String?
+  shippingAddress Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  student         Student  @relation(fields: [studentId], references: [id])
+}
+
+model Admin {
+  id                String               @id @default(uuid())
+  email             String               @unique
+  passwordHash      String               @map("password_hash")
+  firstName         String               @map("first_name")
+  lastName          String               @map("last_name")
+  role              String               @default("admin")
+  permissions       Json?
+  lastLogin         DateTime?            @map("last_login")
+  isActive          Boolean              @default(true) @map("is_active")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @default(now()) @updatedAt @map("updated_at")
+  verified          Boolean              @default(true)
+  userType          String               @default("admin") @map("user_type")
+  verifications     SchoolVerification[]
+  actions           AdminAction[]
+  approvedCampaigns DonationCampaign[]
+  rejectedStudents  Student[]            @relation("StudentRejector")
+  verifiedStudents  Student[]            @relation("StudentVerifier")
+  taxReceipts       TaxReceipt[]
+
+  @@map("admins")
+}
+
+model AdminAction {
+  id         String   @id @default(uuid())
+  adminId    String   @map("admin_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  details    Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+  admin      Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@map("admin_actions")
+}
+
+model SchoolVerification {
+  id                   String    @id @default(uuid())
+  studentId            String    @unique
+  schoolId             String
+  verificationMethod   String
+  verificationEmail    String?
+  status               String    @default("pending")
+  rejectionReason      String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  verificationDocument String?   @map("verification_document")
+  verifiedBy           String?   @map("verified_by")
+  verifiedAt           DateTime? @map("verified_at")
+  school               School    @relation(fields: [schoolId], references: [id])
+  student              Student   @relation(fields: [studentId], references: [id])
+  admin                Admin?    @relation(fields: [verifiedBy], references: [id])
+}
+
+model School {
+  id                  String               @id @default(uuid())
+  name                String               @unique
+  domain              String?              @unique
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  verificationMethods String[]             @default(["email", "id_card", "transcript"])
+  verifications       SchoolVerification[]
+  students            Student[]            @relation("SchoolToStudent")
+}
+
+model EmailOtp {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  userType  String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, userType])
+  @@index([email, userType])
+  @@map("email_otps")
+}
+
+
