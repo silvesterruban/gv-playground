@@ -68,7 +68,8 @@ export const updateCpuMetrics = () => {
   const totalUsage = cpuUsage.user + cpuUsage.system;
   const usagePercent = (totalUsage / 1000000) * 100; // Convert to percentage
   
-  cpuUsage.set(usagePercent);
+  // Update the CPU usage gauge
+  cpuUsageGauge.set(usagePercent);
 };
 
 // Metrics endpoint

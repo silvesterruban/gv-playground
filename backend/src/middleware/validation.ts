@@ -556,3 +556,6 @@ export class ValidationMiddleware {
     ];
   }
 }
+
+// Export the checkValidation method as handleValidationErrors for backward compatibility
+export const handleValidationErrors = ValidationMiddleware.checkValidation;

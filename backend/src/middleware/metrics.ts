@@ -19,8 +19,8 @@ export const metricsMiddleware = (req: Request, res: Response, next: NextFunctio
       .labels(req.method, route, res.statusCode.toString())
       .inc();
     
-    // Call original end method
-    originalEnd.call(this, chunk, encoding);
+    // Call the original end method
+    return originalEnd.call(this, chunk, encoding);
   };
   
   next();
